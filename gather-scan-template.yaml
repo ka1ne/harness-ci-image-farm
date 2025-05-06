@@ -1,0 +1,123 @@
+template:
+  name: Gather and Scan Harness Images
+  identifier: gather_scan_harness_images
+  versionLabel: v1.0
+  type: Stage
+  projectIdentifier: ${PROJECT_ID}
+  orgIdentifier: ${ORG_ID}
+  tags: {}
+  spec:
+    execution:
+      steps:
+        - step:
+            type: Http
+            name: get_list_of_images_to_update
+            identifier: get_list_of_images_to_update
+            spec:
+              url: <+pipeline.variables.HARNESS_URL>/ci/execution-config/getConfig?accountIdentifier=<+account.identifier>&infra=k8
+              method: GET
+              requestBody: ""
+              headers:
+                - key: X-API-KEY
+                  value: <+secrets.getValue("HARNESS_API_KEY_SECRET")>
+                - key: Content-Type
+                  value: application/json
+              outputVariables:
+                - name: images
+                  value: <+jsonPath(httpResponseBody, "$.processed_images")>
+                - name: raw_response
+                  value: <+httpResponseBody>
+              responseProcessing:
+                responseHandler:
+                  jsonPath:
+                    key: apiResponse
+                    value: <+httpResponseBody>
+              assertion: <+httpResponseCode> == 200
+            timeout: 30s
+        - step:
+            type: ShellScript
+            name: parse_images
+            identifier: parse_images
+            spec:
+              shell: Bash
+              source:
+                type: Inline
+                spec:
+                  script: |
+                    #!/bin/bash
+                    set -e
+                    
+                    echo "Parsing image data..."
+                    
+                    if [ -z "<+execution.steps.get_list_of_images_to_update.output.outputVariables.images>" ]; then
+                      echo "No images found in response"
+                      exit 0
+                    fi
+                    
+                    # Create a file with image data
+                    echo "<+execution.steps.get_list_of_images_to_update.output.outputVariables.images>" > image_data.txt
+                    
+                    # Count images
+                    IMAGE_COUNT=$(grep -o "," image_data.txt | wc -l)
+                    IMAGE_COUNT=$((IMAGE_COUNT + 1))
+                    
+                    echo "Found $IMAGE_COUNT images to process"
+                    
+                    # Extract and display image information
+                    IFS=',' read -ra IMAGES <<< "<+execution.steps.get_list_of_images_to_update.output.outputVariables.images>"
+                    for img in "${IMAGES[@]}"; do
+                      field=$(echo "$img" | cut -d= -f1)
+                      image=$(echo "$img" | cut -d= -f2)
+                      name=$(echo "$image" | cut -d: -f1)
+                      version=$(echo "$image" | cut -d: -f2)
+                      
+                      echo "Field: $field, Image: $name, Version: $version"
+                    done
+                    
+                    # Export as output variables
+                    echo "##harness:setOutput name=image_count \"$IMAGE_COUNT\""
+                    
+                    # Create JSON output for logging
+                    echo "{\"total_images\": $IMAGE_COUNT}" > image_summary.json
+              environmentVariables: []
+            timeout: 10m
+        - step:
+            type: Run
+            name: scan_images_for_vulnerabilities
+            identifier: scan_images_for_vulnerabilities
+            spec:
+              connectorRef: ${DOCKER_CONNECTOR_ID}
+              image: aquasec/trivy:latest
+              shell: Bash
+              command: |
+                #!/bin/bash
+                set -e
+                
+                mkdir -p /harness/scans
+                
+                if [ -z "<+execution.steps.get_list_of_images_to_update.output.outputVariables.images>" ]; then
+                  echo "No images to scan"
+                  exit 0
+                fi
+                
+                IFS=',' read -ra IMAGES <<< "<+execution.steps.get_list_of_images_to_update.output.outputVariables.images>"
+                for img in "${IMAGES[@]}"; do
+                  image=$(echo "$img" | cut -d= -f2)
+                  echo "Scanning image: $image for vulnerabilities"
+                  
+                  # Format image name for filename
+                  safe_name=$(echo "$image" | tr '/:' '__')
+                  
+                  # Run Trivy scan
+                  trivy image --no-progress --format json --output "/harness/scans/${safe_name}.json" "$image" || true
+                  
+                  # Also create a summary report
+                  trivy image --no-progress --severity HIGH,CRITICAL "$image" || true
+                done
+                
+                echo "Scans completed. Reports saved to /harness/scans/"
+              resources:
+                limits:
+                  memory: 1Gi
+                  cpu: "0.5"
+            timeout: 30m 
