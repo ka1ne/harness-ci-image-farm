@@ -1,0 +1,254 @@
+pipeline:
+  name: Harness CI Image Factory
+  identifier: harness_ci_image_factory
+  projectIdentifier: ${PROJECT_ID}
+  orgIdentifier: ${ORG_ID}
+  tags: {}
+  variables:
+    - name: registry
+      type: String
+      description: "Container registry to push images to"
+      required: true
+      value: ${REGISTRY}
+    - name: modify_default
+      type: Boolean
+      description: "Whether to update Harness default image configuration"
+      required: false
+      value: "false"
+    - name: registry_connector
+      type: String
+      description: "Connector ID for registry authentication"
+      required: true
+      value: ${REGISTRY_CONNECTOR_ID}
+    - name: MAX_CONCURRENCY
+      type: Number
+      description: "Maximum number of concurrent operations"
+      required: false
+      value: 5
+    - name: HARNESS_URL
+      type: String
+      description: "Harness platform URL"
+      required: true
+      value: "https://app.harness.io/gateway/api/graphql"
+    - name: HARNESS_API_KEY_SECRET
+      type: String
+      description: "Secret identifier for Harness API key"
+      required: true
+      value: ${API_KEY_SECRET_ID}
+    - name: GATHER_SCAN_TEMPLATE
+      type: String
+      description: "Template reference for gathering images"
+      required: true
+    - name: BUILD_PUSH_TEMPLATE
+      type: String
+      description: "Template reference for building and pushing images"
+      required: true
+
+  stages:
+    - stage:
+        name: Gather Harness Images
+        identifier: gather_harness_images
+        description: Reads official Harness API to gather a list of the Harness Images used for pipeline execution
+        template:
+          templateRef: <+pipeline.variables.GATHER_SCAN_TEMPLATE>
+        spec:
+          execution:
+            steps:
+              - step:
+                  type: Http
+                  name: get_list_of_images_to_update
+                  identifier: get_list_of_images_to_update
+                  spec:
+                    url: <+pipeline.variables.HARNESS_URL>/ci/execution-config/getConfig?accountIdentifier=<+account.identifier>&infra=k8
+                    method: GET
+                    requestBody: ""
+                    headers:
+                      - key: X-API-KEY
+                        value: <+secrets.getValue("HARNESS_API_KEY_SECRET")>
+                      - key: Content-Type
+                        value: application/json
+                    outputVariables:
+                      - name: images
+                        value: <+jsonPath(httpResponseBody, "$.processed_images")>
+                      - name: raw_response
+                        value: <+httpResponseBody>
+                    responseProcessing:
+                      responseHandler:
+                        jsonPath:
+                          key: apiResponse
+                          value: <+httpResponseBody>
+                    assertion: <+httpResponseCode> == 200
+                  timeout: 30s
+              - step:
+                  type: ShellScript
+                  name: log_images_to_process
+                  identifier: log_images_to_process
+                  spec:
+                    shell: Bash
+                    source:
+                      type: Inline
+                      spec:
+                        script: |
+                          #!/bin/bash
+                          set -e
+                          
+                          echo "Found images to process:"
+                          if [ -z "<+execution.steps.get_list_of_images_to_update.output.outputVariables.images>" ]; then
+                            echo "No images to update"
+                            exit 0
+                          fi
+                          
+                          IFS=',' read -ra IMAGES <<< "<+execution.steps.get_list_of_images_to_update.output.outputVariables.images>"
+                          for img in "${IMAGES[@]}"; do
+                            echo "$img"
+                          done
+                          
+                          echo "Total images to process: ${#IMAGES[@]}"
+                    environmentVariables: []
+                  timeout: 10m
+
+    - stage:
+        name: Build and Push Images
+        identifier: build_and_push_images
+        description: "Builds and pushes Harness CI images to the specified registry"
+        template:
+          templateRef: <+pipeline.variables.BUILD_PUSH_TEMPLATE>
+        strategy:
+          repeat:
+            items: <+pipeline.stages.gather_harness_images.spec.execution.steps.get_list_of_images_to_update.output.outputVariables.images.split(",")>
+            maxConcurrency: <+pipeline.variables.MAX_CONCURRENCY>
+        variables:
+          - name: IMAGE_NAME
+            type: String
+            value: <+repeat.item.split("=")[1].split(":")[0]>
+          - name: IMAGE_VERSION
+            type: String
+            value: <+repeat.item.split("=")[1].split(":")[1]>
+          - name: IMAGE
+            type: String
+            value: <+repeat.item.split("=")[1]>
+          - name: REGISTRY_CONNECTOR_ID
+            type: String
+            value: <+pipeline.variables.registry_connector>
+        when:
+          pipelineStatus: Success
+          condition: <+pipeline.stages.gather_harness_images.spec.execution.steps.get_list_of_images_to_update.output.outputVariables.images> != ""
+
+    - stage:
+        name: Update Harness CI Image Configuration
+        identifier: update_harness_ci_image_configuration
+        description: "Updates the Harness Platform to use the newly pushed images as the default versions"
+        type: Custom
+        spec:
+          execution:
+            steps:
+              - step:
+                  type: Http
+                  name: Update Custom Configuration of Images
+                  identifier: Update_Custom_Configuration_of_Images
+                  spec:
+                    url: <+pipeline.variables.HARNESS_URL>/ci/execution-config/update-config?accountIdentifier=<+account.identifier>&infra=k8
+                    method: POST
+                    assertion: <+httpResponseCode> == 200
+                    headers:
+                      - key: X-API-KEY
+                        value: <+secrets.getValue("HARNESS_API_KEY_SECRET")>
+                      - key: Content-Type
+                        value: application/json
+                    outputVariables: []
+                    requestBody: |
+                      [
+                          {
+                              "field": "<+repeat.item.split('=')[0]>",
+                              "value": "<+pipeline.variables.registry>/<+repeat.item.split('=')[1]>"
+                          }
+                      ]
+                  timeout: 60s
+        strategy:
+          repeat:
+            items: <+pipeline.stages.gather_harness_images.spec.execution.steps.get_list_of_images_to_update.output.outputVariables.images.split(",")>
+            maxConcurrency: <+pipeline.variables.MAX_CONCURRENCY>
+        when:
+          pipelineStatus: Success
+          condition: (<+pipeline.stages.gather_harness_images.spec.execution.steps.get_list_of_images_to_update.output.outputVariables.images> != "") && <+pipeline.variables.modify_default>
+
+    - stage:
+        name: Generate Compliance Report
+        identifier: generate_compliance_report
+        description: "Creates a compliance report of all processed images"
+        type: Custom
+        spec:
+          execution:
+            steps:
+              - step:
+                  type: ShellScript
+                  name: generate_image_inventory
+                  identifier: generate_image_inventory
+                  spec:
+                    shell: Bash
+                    source:
+                      type: Inline
+                      spec:
+                        script: |
+                          #!/bin/bash
+                          set -e
+                          
+                          echo "Generating image inventory report..."
+                          
+                          # Create report directory
+                          mkdir -p reports
+                          
+                          # Create inventory file
+                          cat > reports/image_inventory.json << EOF
+                          {
+                            "timestamp": "$(date -u +"%Y-%m-%dT%H:%M:%SZ")",
+                            "pipeline_id": "<+pipeline.id>",
+                            "images": [
+                          EOF
+                          
+                          # Append each image to the inventory
+                          IFS=',' read -ra IMAGES <<< "<+pipeline.stages.gather_harness_images.spec.execution.steps.get_list_of_images_to_update.output.outputVariables.images>"
+                          
+                          for i in "${!IMAGES[@]}"; do
+                            img="${IMAGES[$i]}"
+                            field=$(echo "$img" | cut -d= -f1)
+                            image=$(echo "$img" | cut -d= -f2)
+                            
+                            comma=""
+                            if [ $i -lt $((${#IMAGES[@]} - 1)) ]; then
+                              comma=","
+                            fi
+                            
+                            cat >> reports/image_inventory.json << EOF
+                              {
+                                "field": "$field",
+                                "image": "$image",
+                                "registry": "<+pipeline.variables.registry>/$image",
+                                "processed": true
+                              }$comma
+                          EOF
+                          done
+                          
+                          # Complete the file
+                          cat >> reports/image_inventory.json << EOF
+                            ]
+                          }
+                          EOF
+                          
+                          echo "Image inventory report generated at reports/image_inventory.json"
+                          cat reports/image_inventory.json
+                    environmentVariables: []
+                  timeout: 10m
+              - step:
+                  type: S3Upload
+                  name: upload_report
+                  identifier: upload_report
+                  spec:
+                    connectorRef: ${S3_CONNECTOR_ID}
+                    region: ${AWS_REGION}
+                    bucket: ${REPORTS_BUCKET}
+                    key: "harness-ci-images/<+pipeline.id>/image_inventory.json"
+                    contentFile: "reports/image_inventory.json"
+                  timeout: 10m
+        when:
+          pipelineStatus: Success 
