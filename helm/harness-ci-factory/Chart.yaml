@@ -1,0 +1,17 @@
+apiVersion: v2
+name: harness-ci-factory
+description: A Helm chart for deploying the Harness CI Image Factory with RSS feed monitoring
+type: application
+version: 0.1.0
+appVersion: "1.0.0"
+home: https://github.com/harness/harness-ci-factory
+maintainers:
+  - name: Harness DevOps
+    email: devops@harness.io
+keywords:
+  - harness
+  - ci
+  - continuous-integration
+  - docker
+  - image
+  - factory 

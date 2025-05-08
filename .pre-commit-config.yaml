@@ -1,0 +1,33 @@
+repos:
+- repo: https://github.com/pre-commit/pre-commit-hooks
+  rev: v4.4.0
+  hooks:
+    - id: trailing-whitespace
+    - id: end-of-file-fixer
+    - id: check-yaml
+    - id: check-added-large-files
+    - id: detect-private-key
+    - id: check-merge-conflict
+
+- repo: https://github.com/antonbabenko/pre-commit-terraform
+  rev: v1.77.1
+  hooks:
+    - id: terraform_fmt
+    - id: terraform_docs
+    - id: terraform_validate
+    - id: terraform_tflint
+    - id: terraform_tfsec
+
+- repo: https://github.com/awslabs/git-secrets
+  rev: master
+  hooks:
+    - id: git-secrets
+
+# Custom hook to check for secrets.yaml and terraform.tfvars
+- repo: local
+  hooks:
+    - id: detect-sensitive-files
+      name: detect sensitive files
+      entry: bash -c 'if [ "$BYPASS_SENSITIVE_CHECK" != "1" ]; then for file in "$@"; do if [[ "$file" == *"secrets.yaml"* || "$file" == *"terraform.tfvars"* ]]; then echo "Error: Attempting to commit sensitive file: $file"; exit 1; fi; done; fi'
+      language: system
+      pass_filenames: true 

@@ -1,0 +1,230 @@
+template:
+  name: Harness CI Image Factory - Build and Push
+  identifier: harness_ci_image_factory_build_push
+  versionLabel: "1.0.0"
+  type: Stage
+  projectIdentifier: ${PROJECT_ID}
+  orgIdentifier: ${ORG_ID}
+  tags:
+    role: harness-ci-image-factory
+  spec:
+    type: Custom
+    spec:
+      variables:
+        - name: IMAGE_NAME
+          type: String
+          description: "Name of the image (potentially including registry path)."
+          value: <+input>
+        - name: IMAGE_VERSION
+          type: String
+          description: "Version/tag of the image."
+          value: <+input>
+        - name: IMAGE
+          type: String
+          description: "Fully qualified image reference (e.g., myregistry/myimage:tag)."
+          value: <+input>
+        - name: TARGET_REGISTRY
+          type: String
+          description: "Target registry URL (e.g., docker.io/myuser)."
+          value: <+input>
+        - name: SOURCE_REGISTRY
+          type: String
+          description: "Source registry URL for the base image."
+          value: <+input>
+        - name: REGISTRY_CONNECTOR_ID
+          type: String
+          description: "Connector ID for the target Docker registry."
+          value: <+input>
+        - name: scan_images
+          type: Boolean
+          description: "Whether to scan images for vulnerabilities."
+          value: <+input>
+        - name: fail_on_severity
+          type: String
+          description: "Severity level to fail the scan."
+          value: <+input>
+      execution:
+        steps:
+          - step:
+              type: ShellScript
+              name: Check Image Already Exists
+              identifier: check_image_already_exists
+              spec:
+                shell: Bash
+                source:
+                  type: Inline
+                  spec:
+                    script: |
+                      #!/bin/bash
+                      set -e
+                      
+                      IMAGE_NAME_VAR="<+stage.variables.IMAGE_NAME>"
+                      IMAGE_VERSION_VAR="<+stage.variables.IMAGE_VERSION>"
+                      TARGET_REGISTRY_VAR="<+stage.variables.TARGET_REGISTRY>"
+                      FULL_IMAGE_REF_TO_CHECK="$TARGET_REGISTRY_VAR/$IMAGE_NAME_VAR:$IMAGE_VERSION_VAR"
+                      
+                      if [[ "$IMAGE_NAME_VAR" == "$TARGET_REGISTRY_VAR"* ]]; then 
+                        FULL_IMAGE_REF_TO_CHECK="$IMAGE_NAME_VAR:$IMAGE_VERSION_VAR"
+                      fi
+                      
+                      echo "Checking if image $FULL_IMAGE_REF_TO_CHECK already exists..."
+                      
+                      # Setup the skopeo command for registry interaction
+                      SKOPEO_CMD="skopeo inspect"
+                      
+                      # If not available, we'll use a docker API approach instead
+                      if ! command -v skopeo &> /dev/null; then
+                        echo "Skopeo not available, using alternative approach..."
+                        
+                        # Try to inspect the image in the registry
+                        # This is a simplified approach - in production you would handle authentication and registry-specific APIs
+                        if docker pull "$FULL_IMAGE_REF_TO_CHECK" &>/dev/null; then
+                          echo "Image $FULL_IMAGE_REF_TO_CHECK already exists in registry"
+                          echo "Skipping build and push for this image"
+                          harness_io out image_exists="true"
+                        else
+                          echo "Image does not exist or couldn't be pulled, will build and push"
+                          harness_io out image_exists="false"
+                        fi
+                      else
+                        # Use skopeo to check if image exists (handles authentication better)
+                        if $SKOPEO_CMD "docker://$FULL_IMAGE_REF_TO_CHECK" &>/dev/null; then
+                          echo "Image $FULL_IMAGE_REF_TO_CHECK already exists in registry"
+                          echo "Skipping build and push for this image"
+                          harness_io out image_exists="true"
+                        else
+                          echo "Image does not exist, will build and push"
+                          harness_io out image_exists="false"
+                        fi
+                      fi
+                environmentVariables: []
+              timeout: 5m
+          
+          - step:
+              type: ShellScript
+              name: Create Dockerfile
+              identifier: create_dockerfile
+              spec:
+                shell: Bash
+                source:
+                  type: Inline
+                  spec:
+                    script: |
+                      #!/bin/bash
+                      set -e
+                      
+                      IMAGE_VAR="<+stage.variables.IMAGE>"
+                      SOURCE_REGISTRY_VAR="<+stage.variables.SOURCE_REGISTRY>"
+                      IMAGE_NAME_LABEL_VAR="<+stage.variables.IMAGE_NAME>"
+
+                      # Determine the FROM line. If IMAGE_VAR starts with SOURCE_REGISTRY_VAR, use IMAGE_VAR directly.
+                      # Otherwise, prefix with SOURCE_REGISTRY_VAR.
+                      FROM_IMAGE=""
+                      if [[ "$IMAGE_VAR" == "$SOURCE_REGISTRY_VAR"* ]]; then
+                        FROM_IMAGE="$IMAGE_VAR"
+                      else
+                        FROM_IMAGE="$SOURCE_REGISTRY_VAR/$IMAGE_VAR"
+                      fi
+                      
+                      cat > Dockerfile << EOL
+FROM $FROM_IMAGE
+LABEL org.opencontainers.image.vendor="Harness Inc"
+LABEL org.opencontainers.image.title="$IMAGE_NAME_LABEL_VAR"
+LABEL org.opencontainers.image.description="Harness CI image maintained by <+account.name>"
+LABEL org.opencontainers.image.url="https://harness.io"
+LABEL org.opencontainers.image.created="$(date -u +"%Y-%m-%dT%H:%M:%SZ")"
+LABEL org.opencontainers.image.revision="<+pipeline.sequenceId>"
+EOL
+                      
+                      echo "Created Dockerfile with content:"
+                      cat Dockerfile
+                environmentVariables: []
+              timeout: 5m
+              when:
+                stageStatus: Success
+                condition: <+execution.steps.check_image_already_exists.output.outputVariables.image_exists> == "false"
+          
+          - step:
+              type: Template
+              name: Scan Image for Vulnerabilities
+              identifier: scan_image_for_vulnerabilities
+              template:
+                templateRef: harness_image_security_scan
+                versionLabel: "1.0.0"
+                templateInputs:
+                  type: ShellScript
+                  spec:
+                    FULL_IMAGE_NAME_WITH_TAG: <+stage.variables.IMAGE>
+                    REGISTRY: <+stage.variables.SOURCE_REGISTRY>
+                    IMAGE_NAME: <+stage.variables.IMAGE_NAME>
+                    IMAGE_TAG: <+stage.variables.IMAGE_VERSION>
+                    FAIL_ON_SEVERITY: <+stage.variables.fail_on_severity>
+                    FAIL_BUILD: <+stage.variables.scan_images>
+              when:
+                stageStatus: Success
+                condition: <+execution.steps.check_image_already_exists.output.outputVariables.image_exists> == "false" && <+stage.variables.scan_images> == "true"
+          
+          - step:
+              type: BuildAndPushDockerRegistry
+              name: Pull and Push Image
+              identifier: pull_and_push_image
+              spec:
+                connectorRef: <+stage.variables.REGISTRY_CONNECTOR_ID>
+                repo: <+stage.variables.TARGET_REGISTRY>/<+stage.variables.IMAGE_NAME>
+                tags:
+                  - <+stage.variables.IMAGE_VERSION>
+                dockerfile: Dockerfile
+                target: ""
+                context: "."
+                buildArgs: {}
+                buildkit: true
+                resources:
+                  limits:
+                    memory: 2Gi
+                    cpu: "1"
+              failureStrategies: []
+              when:
+                stageStatus: Success
+                condition: <+execution.steps.check_image_already_exists.output.outputVariables.image_exists> == "false"
+              
+          - step:
+              type: ShellScript
+              name: Verify Pushed Image
+              identifier: verify_pushed_image
+              spec:
+                shell: Bash
+                source:
+                  type: Inline
+                  spec:
+                    script: |
+                      #!/bin/bash
+                      set -e
+                      
+                      IMAGE_NAME_VAR="<+stage.variables.IMAGE_NAME>"
+                      IMAGE_VERSION_VAR="<+stage.variables.IMAGE_VERSION>"
+                      TARGET_REGISTRY_VAR="<+stage.variables.TARGET_REGISTRY>"
+                      FULL_IMAGE_REF_TO_VERIFY="$TARGET_REGISTRY_VAR/$IMAGE_NAME_VAR:$IMAGE_VERSION_VAR"
+
+                      if [[ "$IMAGE_NAME_VAR" == "$TARGET_REGISTRY_VAR"* ]]; then 
+                        FULL_IMAGE_REF_TO_VERIFY="$IMAGE_NAME_VAR:$IMAGE_VERSION_VAR"
+                      fi
+                      
+                      echo "Verifying image $FULL_IMAGE_REF_TO_VERIFY exists in registry..."
+                      
+                      # Try to pull the image to verify it exists
+                      if docker pull "$FULL_IMAGE_REF_TO_VERIFY" &>/dev/null; then
+                        echo "✅ Image $FULL_IMAGE_REF_TO_VERIFY verified in registry"
+                      else
+                        echo "❌ Failed to verify image $FULL_IMAGE_REF_TO_VERIFY in registry"
+                        exit 1
+                      fi
+                      
+                      # Optional: additional verification steps could be added here
+                      # - Check image digest matches source
+                      # - Validate labels
+                      # - etc.
+                environmentVariables: []
+              timeout: 5m
+              when:
+                stageStatus: Success
+                condition: <+execution.steps.check_image_already_exists.output.outputVariables.image_exists> == "false" 

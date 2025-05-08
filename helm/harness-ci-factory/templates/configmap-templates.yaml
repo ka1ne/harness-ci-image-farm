@@ -1,0 +1,37 @@
+{{- if .Values.terraform.enabled }}
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ .Release.Name }}-terraform-templates
+  namespace: {{ .Release.Namespace }}
+  labels:
+    app.kubernetes.io/name: {{ .Release.Name }}-terraform-templates
+    app.kubernetes.io/instance: {{ .Release.Name }}
+data:
+  # Pipeline templates
+  "templates.pipelines.harness-ci-image-factory.yaml": |
+    {{- .Files.Get "../../templates/pipelines/harness-ci-image-factory.yaml" | nindent 4 }}
+  
+  "templates.pipelines.harness-ci-image-reset.yaml": |
+    {{- .Files.Get "../../templates/pipelines/harness-ci-image-reset.yaml" | nindent 4 }}
+  
+  # Stage templates
+  "templates.templates.gather-harness-ci-image-list.yaml": |
+    {{- .Files.Get "../../templates/templates/gather-harness-ci-image-list.yaml" | nindent 4 }}
+  
+  "templates.templates.harness-ci-build-images-azure.yaml": |
+    {{- .Files.Get "../../templates/templates/harness-ci-build-images-azure.yaml" | nindent 4 }}
+  
+  "templates.templates.harness-ci-build-images-docker.yaml": |
+    {{- .Files.Get "../../templates/templates/harness-ci-build-images-docker.yaml" | nindent 4 }}
+  
+  # Trigger templates
+  "templates.triggers.retrieve-and-build-images.yaml": |
+    {{- .Files.Get "../../templates/triggers/retrieve-and-build-images.yaml" | nindent 4 }}
+  
+  "templates.triggers.harness-ecr-polling-trigger.yaml": |
+    {{- .Files.Get "../../templates/triggers/harness-ecr-polling-trigger.yaml" | nindent 4 }}
+  
+  "templates.triggers.harness-image-update-trigger.yaml": |
+    {{- .Files.Get "../../templates/triggers/harness-image-update-trigger.yaml" | nindent 4 }}
+{{- end }} 

@@ -1,0 +1,55 @@
+# Harness specific ignores
+*.tfstate
+*.tfstate.backup
+.terraform/
+.terraform.lock.hcl
+
+# Secrets and environment-specific values
+secrets.yaml
+terraform.tfvars
+*.tfvars
+
+# Helm artifacts
+*.tgz
+helm-chart/charts/*.tgz
+.helm/
+
+# Template documentation generation
+.template-doc-gen/
+docs/output/
+template-doc-gen/
+harness-schema/
+
+.env
+
+# Logs
+*.log
+logs/
+
+# OS Specific
+.DS_Store
+Thumbs.db
+
+# IDE Files
+.idea/
+.vscode/
+*.swp
+*.swo
+
+# Build artifacts
+bin/
+dist/
+target/
+build/
+*.exe 
+
+# Terraform state files
+*.tfstate
+*.tfstate.*
+
+# Terraform plan files
+*.tfplan
+
+# Crash log files
+crash.log
+crash.*.log

@@ -1,0 +1,51 @@
+trigger:
+  name: Harness CI Image Update Monitor
+  identifier: harness_ci_image_update_monitor
+  description: Monitors Harness CI release RSS feed for new image releases
+  enabled: true
+  tags:
+    created_by: Terraform
+    role: harness-ci-image-factory
+  
+  # Webhook to monitor for new RSS entries (can be triggered by external RSS monitor)
+  webhook:
+    # Use custom webhook for RSS monitoring
+    header: 
+      - name: X-Harness-RSS-Event
+        value: "ci-release"
+    method: POST
+    payload:
+      body: 
+        type: JSON
+        # Extract the release info from the webhook payload
+        fields:
+          - name: version
+            value: <+trigger.payload.version>
+          - name: updated_images
+            value: <+trigger.payload.updated_images>
+          - name: release_date
+            value: <+trigger.payload.release_date>
+    
+  # Pipeline inputs to be filled automatically  
+  pipelineInputs:
+    pipeline:
+      identifier: ${PIPELINE_ID}
+      variables:
+        - name: registry
+          value: ${REGISTRY_NAME}
+        - name: is_retry
+          value: "false"
+        - name: modify_default
+          value: ${MODIFY_DEFAULT}
+        - name: updated_images
+          value: <+trigger.payload.updated_images>
+  
+  # Only trigger if we have actual image updates
+  condition:
+    when: <+trigger.payload.updated_images> != ""
+  
+  # Logging metadata
+  source:
+    name: "Harness CI Release Feed"
+    type: "RSS Monitor"
+    scope: "ci-image-updates" 

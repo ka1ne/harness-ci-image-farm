@@ -1,0 +1,248 @@
+template:
+  name: Harness CI Image Factory
+  identifier: harness_ci_image_factory
+  versionLabel: "1.0.0"
+  type: Pipeline
+  projectIdentifier: ${PROJECT_ID}
+  orgIdentifier: ${ORG_ID}
+  tags:
+    role: harness-image-factory
+    scope: template
+  spec:
+    variables:
+      - name: source_registry
+        description: "Source registry (e.g., public.ecr.aws/harness, docker.io/harness, gcr.io/harness-images)"
+        type: String
+        value: <+input>.default("docker.io/harness")
+      - name: target_registry
+        description: "Target container registry to store images"
+        type: String
+        value: <+input>
+      - name: registry_connector_source
+        description: "Connector ID for source registry authentication (if needed)"
+        type: String
+        value: <+input>
+      - name: registry_connector_target
+        description: "Connector ID for target registry"
+        type: String
+        value: <+input>
+      - name: scan_images
+        description: "Whether to scan images for vulnerabilities"
+        type: String
+        value: <+input>.allowedValues(true,false).default("true")
+      - name: fail_on_severity
+        description: "Severity level to fail the build"
+        type: String
+        value: <+input>.allowedValues(CRITICAL,HIGH,MEDIUM,LOW,UNKNOWN).default("CRITICAL")
+      - name: filter_prefix
+        description: "Filter images by name prefix (e.g., ci-)"
+        type: String
+        value: <+input>.default("")
+      - name: harness_only
+        description: "Only process Harness official images"
+        type: String
+        value: <+input>.allowedValues(true,false).default("true")
+      - name: max_concurrency
+        description: "Maximum number of concurrent operations"
+        type: Number
+        value: <+input>.default(5)
+      - name: infrastructure_type
+        description: "Type of infrastructure (K8 or VM)"
+        type: String
+        value: <+input>.allowedValues(K8,VM).default("K8")
+      - name: include_windows_rootless
+        description: "Include Windows rootless images"
+        type: String
+        value: <+input>.allowedValues(true,false).default("false")
+      - name: modify_default
+        description: "Update the Harness Platform to use the newly pushed images"
+        type: String
+        value: <+input>.allowedValues(true,false).default("false")
+      - name: HARNESS_URL
+        description: "Harness platform URL (required if modify_default is true)"
+        type: String
+        value: <+input>.default("https://app.harness.io")
+      - name: HARNESS_API_KEY_SECRET
+        description: "Secret identifier for Harness API key (required if modify_default is true)"
+        type: String
+        value: <+input>.default("")
+    
+    stages:
+      - stage:
+          name: Gather Harness Images
+          identifier: gather_harness_images
+          description: "Gather Harness CI images for processing"
+          type: Template
+          templateRef: harness_ci_image_factory_gather_scan # This ref might need project/org scope in real Harness e.g. project.harness_ci_image_factory_gather_scan
+          versionLabel: "1.0.0"
+          variables:
+            - name: source_registry
+              type: String
+              value: <+pipeline.variables.source_registry>
+            - name: filter_prefix
+              type: String
+              value: <+pipeline.variables.filter_prefix>
+            - name: harness_only
+              type: String
+              value: <+pipeline.variables.harness_only>
+            - name: infrastructure_type
+              type: String
+              value: <+pipeline.variables.infrastructure_type>
+            - name: include_windows_rootless
+              type: String
+              value: <+pipeline.variables.include_windows_rootless>
+            - name: HARNESS_URL
+              type: String
+              value: <+pipeline.variables.HARNESS_URL>
+            - name: HARNESS_API_KEY_SECRET
+              type: String
+              value: <+pipeline.variables.HARNESS_API_KEY_SECRET>
+            # Added for the gather_scan stage variables
+            - name: fail_on_severity_preliminary_scan 
+              type: String
+              value: <+pipeline.variables.fail_on_severity> # Or a new pipeline variable like prelim_scan_severity
+      
+      - stage:
+          name: Process Images
+          identifier: process_images
+          description: "Build and push discovered images"
+          type: Template
+          templateRef: harness_ci_image_factory_build_push # This ref might need project/org scope
+          strategy:
+            repeat:
+              items: <+pipeline.stages.gather_harness_images.spec.execution.steps.get_list_of_images_to_update.output.outputVariables.images.split(",")>
+              maxConcurrency: <+pipeline.variables.max_concurrency>
+          variables:
+            - name: IMAGE_NAME
+              type: String
+              value: <+repeat.item.split("=")[1].split(":")[0]>
+            - name: IMAGE_VERSION
+              type: String
+              value: <+repeat.item.split("=")[1].split(":")[1]>
+            - name: IMAGE
+              type: String
+              value: <+repeat.item.split("=")[1]>
+            - name: REGISTRY_CONNECTOR_ID
+              type: String
+              value: <+pipeline.variables.registry_connector_target>
+            - name: TARGET_REGISTRY
+              type: String
+              value: <+pipeline.variables.target_registry>
+            - name: SOURCE_REGISTRY
+              type: String
+              value: <+pipeline.variables.source_registry>
+            - name: scan_images # For build_push stage
+              type: Boolean # Should be boolean if scan_images in build_push is boolean
+              value: <+pipeline.variables.scan_images>
+            - name: fail_on_severity # For build_push stage
+              type: String
+              value: <+pipeline.variables.fail_on_severity>
+          when:
+            pipelineStatus: Success
+            condition: <+pipeline.stages.gather_harness_images.spec.execution.steps.get_list_of_images_to_update.output.outputVariables.images> != ""
+      
+      - stage:
+          name: Update Harness CI Image Configuration
+          identifier: update_harness_ci_image_configuration
+          description: "Updates the Harness Platform to use the newly pushed images"
+          type: Custom
+          spec:
+            execution:
+              steps:
+                - step:
+                    type: Http
+                    name: Update Custom Configuration of Images
+                    identifier: Update_Custom_Configuration_of_Images
+                    spec:
+                      url: <+pipeline.variables.HARNESS_URL>/gateway/ci/execution-config/update-config?accountIdentifier=<+account.identifier>&infra=<+pipeline.variables.infrastructure_type>
+                      method: POST
+                      assertion: <+httpResponseCode> == 200
+                      headers:
+                        - key: X-API-KEY
+                          value: <+secrets.getValue(pipeline.variables.HARNESS_API_KEY_SECRET)> # Corrected to pipeline var
+                        - key: Content-Type
+                          value: application/json
+                      outputVariables: []
+                      requestBody: |
+                        [
+                            {
+                                "field": "<+repeat.item.split('=')[0]>",
+                                "value": "<+pipeline.variables.target_registry>/<+repeat.item.split('=')[1]>"
+                            }
+                        ]
+                    timeout: 30s
+          tags: {}
+          strategy:
+            repeat:
+              items: <+pipeline.stages.gather_harness_images.spec.execution.steps.get_list_of_images_to_update.output.outputVariables.images.split(",")>
+              maxConcurrency: <+pipeline.variables.max_concurrency>
+          when:
+            pipelineStatus: Success
+            condition: (<+pipeline.stages.gather_harness_images.spec.execution.steps.get_list_of_images_to_update.output.outputVariables.images> != "") && <+pipeline.variables.modify_default> == "true"
+      
+      - stage:
+          name: Verify Images
+          identifier: verify_images
+          description: "Verify all images were processed successfully"
+          type: Custom
+          spec:
+            execution:
+              steps:
+                - step:
+                    type: ShellScript
+                    name: Generate Report
+                    identifier: generate_report
+                    spec:
+                      shell: Bash
+                      source:
+                        type: Inline
+                        spec:
+                          script: |
+                            #!/bin/bash
+                            set -e
+                            
+                            IMAGES='<+pipeline.stages.gather_harness_images.spec.execution.steps.get_list_of_images_to_update.output.outputVariables.images>'
+                            TARGET_REGISTRY='<+pipeline.variables.target_registry>'
+                            
+                            echo "========================================"
+                            echo "   Harness CI Image Factory Report"
+                            echo "========================================"
+                            echo ""
+                            echo "Source Registry: <+pipeline.variables.source_registry>"
+                            echo "Target Registry: $TARGET_REGISTRY"
+                            
+                            if [ -z "$IMAGES" ]; then
+                              echo "No images were processed."
+                              exit 0
+                            fi
+                            
+                            # Count images
+                            IMAGE_COUNT=$(echo "$IMAGES" | tr ',' '\n' | wc -l)
+                            echo "Total Images Processed: $IMAGE_COUNT"
+                            echo ""
+                            
+                            # List images
+                            echo "Image List:"
+                            IFS=',' read -ra IMAGE_ARRAY <<< "$IMAGES"
+                            for IMG in "${IMAGE_ARRAY[@]}"; do
+                              FIELD=$(echo $IMG | cut -d'=' -f1)
+                              IMAGE_FULL=$(echo $IMG | cut -d'=' -f2)
+                              echo "- $FIELD: $IMAGE_FULL → $TARGET_REGISTRY/$IMAGE_FULL"
+                            done
+                            
+                            echo ""
+                            if [ "<+pipeline.variables.modify_default>" == "true" ]; then
+                              echo "Harness CI configuration has been updated to use these images."
+                            else
+                              echo "Images have been pushed but Harness CI configuration was not updated."
+                              echo "To update your configuration, set modify_default=true."
+                            fi
+                            
+                            echo ""
+                            echo "Process completed successfully!"
+                      environmentVariables: []
+                    timeout: 5m
+          when:
+            pipelineStatus: Success
+    
+    timeout: 120m 

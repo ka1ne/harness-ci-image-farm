@@ -1,0 +1,34 @@
+pipeline:
+  name: TF Managed Example Pipeline
+  identifier: tfManagedExamplePipeline
+  %{ if project_id != null ~}
+  projectIdentifier: ${project_id}
+  %{ endif ~}
+  %{ if org_id != null ~}
+  orgIdentifier: ${org_id}
+  %{ endif ~}
+  tags: {}
+  stages:
+    - stage:
+        name: Greetings
+        identifier: greetings
+        description: "A simple stage that greets you."
+        type: Custom
+        spec:
+          execution:
+            steps:
+              - step:
+                  name: Echo Greeting
+                  identifier: echoGreeting
+                  type: ShellScript
+                  spec:
+                    shell: Bash
+                    onDelegate: true
+                    source:
+                      type: Inline
+                      spec:
+                        script: echo "Hello from a Terraform-managed Harness Template!"
+                    environmentVariables: []
+                    outputVariables: []
+                  timeout: 5m
+        tags: {} 

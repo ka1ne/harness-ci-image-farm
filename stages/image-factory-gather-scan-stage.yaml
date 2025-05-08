@@ -1,0 +1,148 @@
+template:
+  name: Harness CI Image Factory - Gather and Scan
+  identifier: harness_ci_image_factory_gather_scan
+  versionLabel: "1.0.0"
+  type: Stage
+  projectIdentifier: ${PROJECT_ID}
+  orgIdentifier: ${ORG_ID}
+  tags:
+    role: harness-ci-image-factory
+  spec:
+    type: Custom
+    spec:
+      variables: # Defining expected inputs for this stage template
+        - name: HARNESS_URL
+          type: String
+          value: <+input>
+        - name: HARNESS_API_KEY_SECRET
+          type: String
+          value: <+input>
+        - name: infrastructure_type
+          type: String
+          value: <+input>
+        - name: include_windows_rootless
+          type: String
+          value: <+input>
+        - name: source_registry # Needed if images from API don't include full path for default registry
+          type: String
+          description: "Default source registry for images if not part of the image string from API."
+          value: <+input>.default("docker.io/harness") # Or any other appropriate default
+        - name: fail_on_severity_preliminary_scan
+          type: String
+          description: "Severity to report on for the preliminary scan (does not fail build)."
+          value: <+input>.default("HIGH")
+      execution:
+        steps:
+          - step:
+              type: Http
+              name: Get Default Configuration
+              identifier: get_default_configuration
+              spec:
+                url: <+stage.variables.HARNESS_URL>/gateway/ci/execution-config/get-default-config?accountIdentifier=<+account.identifier>&infra=<+stage.variables.infrastructure_type>
+                method: GET
+                headers:
+                  - key: X-API-KEY
+                    value: <+secrets.getValue(stage.variables.HARNESS_API_KEY_SECRET)>
+                  - key: Content-Type
+                    value: application/json
+                outputVariables:
+                  - name: default_config
+                    value: <+httpResponseBody>
+          - step:
+              type: ShellScript
+              name: Get List of Images to Update
+              identifier: get_list_of_images_to_update
+              spec:
+                shell: Bash
+                source:
+                  type: Inline
+                  spec:
+                    script: |
+                      #!/bin/bash
+                      set -e
+                      
+                      echo "Getting list of images to update..."
+                      DEFAULT_CONFIG='<+execution.steps.get_default_configuration.output.outputVariables.default_config>'
+                      SOURCE_REGISTRY_VAR="<+stage.variables.source_registry>" # Get source_registry variable
+                      
+                      # Extract the data object
+                      DATA=$(echo "$DEFAULT_CONFIG" | grep -o '"data":{[^}]*}' | sed 's/"data"://')
+                      
+                      # Process each field in the data object
+                      IMAGES=""
+                      
+                      # Standard images
+                      for FIELD in addonTag liteEngineTag gitCloneTag buildAndPushDockerRegistryTag buildAndPushECRTag buildAndPushGCRTag gcsUploadTag s3UploadTag artifactoryUploadTag cacheGCSTag cacheS3Tag securityTag; do
+                        IMAGE_PATH=$(echo "$DATA" | grep -o "\"$FIELD\":\"[^\"]*\"" | cut -d':' -f2- | tr -d '\"')
+                        if [ ! -z "$IMAGE_PATH" ]; then
+                          # Ensure image path includes a registry. If not, prepend source_registry.
+                          if [[ "$IMAGE_PATH" != *"/"* ]]; then
+                            IMAGE_FULL_PATH="$SOURCE_REGISTRY_VAR/$IMAGE_PATH"
+                          else
+                            IMAGE_FULL_PATH="$IMAGE_PATH"
+                          fi
+                          if [ ! -z "$IMAGES" ]; then
+                            IMAGES="$IMAGES,$FIELD=$IMAGE_FULL_PATH"
+                          else
+                            IMAGES="$FIELD=$IMAGE_FULL_PATH"
+                          fi
+                        fi
+                      done
+                      
+                      # Check if we should include Windows rootless images
+                      if [ "<+stage.variables.include_windows_rootless>" == "true" ]; then
+                        # Add Windows rootless images - ensure these are full paths or prepend SOURCE_REGISTRY_VAR
+                        ROOTLESS_IMAGE_SPECS="windowsRootlessAddonTag=harness/ci-addon:rootless-1.16.71,windowsRootlessLiteEngineTag=harness/ci-lite-engine:rootless-1.16.71,windowsRootlessGitCloneTag=harness/drone-git:1.6.7-rootless"
+                        
+                        for ROOTLESS_SPEC in $(echo $ROOTLESS_IMAGE_SPECS | tr ',' '\n'); do
+                          FIELD_NAME=$(echo $ROOTLESS_SPEC | cut -d'=' -f1)
+                          IMAGE_PATH=$(echo $ROOTLESS_SPEC | cut -d'=' -f2)
+                          if [[ "$IMAGE_PATH" != *"/"* ]]; then # Prepend default if not a full path
+                              IMAGE_FULL_PATH="$SOURCE_REGISTRY_VAR/$IMAGE_PATH"
+                          else
+                              IMAGE_FULL_PATH="$IMAGE_PATH"
+                          fi
+                          if [ ! -z "$IMAGES" ]; then
+                            IMAGES="$IMAGES,$FIELD_NAME=$IMAGE_FULL_PATH"
+                          else
+                            IMAGES="$FIELD_NAME=$IMAGE_FULL_PATH"
+                          fi
+                        done
+                      fi
+                      
+                      echo "Images to update: $IMAGES"
+                      harness_io out images="$IMAGES"
+                environmentVariables: []
+              timeout: 10m
+          - step:
+              name: Scan Images for Vulnerabilities (Preliminary)
+              identifier: scan_images_for_vulnerabilities_preliminary
+              type: Template # Changed from ShellScript to Template
+              template:
+                templateRef: harness_image_security_scan # Reference the updated step template
+                versionLabel: "1.0.0" # Or use a variable for version
+                templateInputs:
+                  type: ShellScript # Type of the referenced template
+                  spec: # Inputs for the harness_image_security_scan template
+                    # FULL_IMAGE_NAME_WITH_TAG is derived from the repeat item
+                    # REGISTRY, IMAGE_NAME, IMAGE_TAG are secondary if FULL_IMAGE_NAME_WITH_TAG is used by template
+                    FAIL_ON_SEVERITY: <+stage.variables.fail_on_severity_preliminary_scan> # Use a specific variable for this scan
+                    FAIL_BUILD: "false" # This preliminary scan should not fail the build
+                    IGNORE_UNFIXED: "true"
+                    OUTPUT_DIR: "scan-results-<+repeat.count>"
+              strategy:
+                repeat:
+                  items: <+execution.steps.get_list_of_images_to_update.output.outputVariables.images.split(",")>
+                  maxConcurrency: 3 # Example concurrency
+                  onRepeat:
+                    steps: # Define how inputs are mapped for each repeated item
+                      - step:
+                          identifier: harness_image_security_scan # Must match the template identifier within the step definition
+                          spec:
+                            templateInputs:
+                              spec: # Target inputs for the template itself
+                                FULL_IMAGE_NAME_WITH_TAG: <+repeat.item.split("=")[1]>
+              when:
+                stageStatus: Success
+                condition: <+execution.steps.get_list_of_images_to_update.output.outputVariables.images> != "" && <+pipeline.variables.scan_images> == "true" # Assuming scan_images is a pipeline var controlling all scanning
+    timeout: 45m # Increased timeout to accommodate looped scanning 

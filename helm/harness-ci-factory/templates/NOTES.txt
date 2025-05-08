@@ -1,0 +1,67 @@
+====================================================================
+ Harness CI Image Factory
+====================================================================
+
+The Harness CI Image Factory has been deployed to your cluster.
+
+Organization: {{ .Values.global.organization.name }}
+Project: {{ .Values.global.project.name }}
+
+RESOURCES DEPLOYED:
+-------------------
+{{- if .Values.terraform.enabled }}
+* Terraform Job: {{ .Release.Name }}-terraform
+  - This job provisions all required Harness resources
+  - Action: {{ .Values.terraform.job.action }}
+{{- end }}
+
+{{- if .Values.rssMonitor.enabled }}
+* RSS Monitor: {{ .Release.Name }}-rss-monitor
+  - Polls the Harness CI release RSS feed for new image releases
+  - Interval: {{ .Values.rssMonitor.config.checkInterval }} minutes
+  - Debug Mode: {{ .Values.rssMonitor.config.debug }}
+{{- end }}
+
+HARNESS RESOURCES CREATED:
+--------------------------
+Once the Terraform job completes successfully, the following resources will be created in Harness:
+
+1. Pipeline: Harness CI Image Factory
+   - Builds and pushes Harness CI images to your registry
+   - Registry: {{ .Values.global.containerRegistry.name }}
+
+2. Pipeline: Harness CI Image Factory - Reset Images to Harness
+   - Resets image configuration back to default Harness images
+
+3. Triggers:
+   {{- if .Values.triggers.ecrPolling.enabled }}
+   - ECR Polling Trigger (polls ECR for new images)
+   {{- end }}
+   {{- if .Values.triggers.rssWebhook.enabled }}
+   - RSS Webhook Trigger (triggered by RSS monitor)
+   {{- end }}
+
+GETTING STARTED:
+---------------
+1. Check the status of the Terraform job:
+   kubectl logs -n {{ .Release.Namespace }} jobs/{{ .Release.Name }}-terraform
+
+2. View the RSS monitor logs:
+   kubectl logs -n {{ .Release.Namespace }} deployment/{{ .Release.Name }}-rss-monitor
+
+3. Access your Harness account to verify the pipelines:
+   https://app.harness.io/ng/#/account/{{ .Values.global.harness.secrets.accountId }}/organization/{{ .Values.global.organization.name }}/projects/{{ .Values.global.project.name }}/pipelines
+
+UNINSTALL:
+---------
+To uninstall/delete the deployment:
+
+1. First, set the Terraform action to "destroy" and upgrade:
+   helm upgrade {{ .Release.Name }} {{ .Chart.Name }} --set terraform.job.action=destroy
+
+2. Then, uninstall the chart:
+   helm uninstall {{ .Release.Name }}
+
+NOTE: This will leave some Kubernetes resources like PVCs. Delete them manually if needed.
+
+For more information, visit: https://github.com/harness/harness-ci-factory 

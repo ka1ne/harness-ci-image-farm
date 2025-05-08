@@ -47,7 +47,7 @@ pipeline:
                     method: GET
                     headers:
                       - key: X-API-KEY
-                        value: <+secrets.getValue("HARNESS_API_KEY_SECRET")>
+                        value: <+secrets.getValue(pipeline.variables.HARNESS_API_KEY_SECRET)> # Ensure pipeline scope for secret
                       - key: Content-Type
                         value: application/json
                     outputVariables:
@@ -77,7 +77,7 @@ pipeline:
                           
                           # Standard images
                           for FIELD in addonTag liteEngineTag gitCloneTag buildAndPushDockerRegistryTag buildAndPushECRTag buildAndPushGCRTag gcsUploadTag s3UploadTag artifactoryUploadTag cacheGCSTag cacheS3Tag securityTag; do
-                            IMAGE=$(echo "$DATA" | grep -o "\"$FIELD\":\"[^\"]*\"" | cut -d':' -f2- | tr -d '"')
+                            IMAGE=$(echo "$DATA" | grep -o "\"$FIELD\":\"[^\"]*\"" | cut -d':' -f2- | tr -d '\"')
                             if [ ! -z "$IMAGE" ]; then
                               if [ ! -z "$IMAGES" ]; then
                                 IMAGES="$IMAGES,$FIELD=$IMAGE"
@@ -93,7 +93,7 @@ pipeline:
                             ROOTLESS_FIELDS="windowsRootlessAddonTag,windowsRootlessLiteEngineTag,windowsRootlessGitCloneTag"
                             
                             for FIELD in $(echo $ROOTLESS_FIELDS | tr ',' '\n'); do
-                              IMAGE=$(echo "$DATA" | grep -o "\"$FIELD\":\"[^\"]*\"" | cut -d':' -f2- | tr -d '"')
+                              IMAGE=$(echo "$DATA" | grep -o "\"$FIELD\":\"[^\"]*\"" | cut -d':' -f2- | tr -d '\"')
                               if [ ! -z "$IMAGE" ]; then
                                 if [ ! -z "$IMAGES" ]; then
                                   IMAGES="$IMAGES,$FIELD=$IMAGE"
@@ -151,7 +151,7 @@ pipeline:
                     assertion: <+httpResponseCode> == 200
                     headers:
                       - key: X-API-KEY
-                        value: <+secrets.getValue("HARNESS_API_KEY_SECRET")>
+                        value: <+secrets.getValue(pipeline.variables.HARNESS_API_KEY_SECRET)> # Ensure pipeline scope for secret
                       - key: Content-Type
                         value: application/json
                     outputVariables: []
@@ -188,7 +188,7 @@ pipeline:
                     assertion: <+httpResponseCode> == 200
                     headers:
                       - key: X-API-KEY
-                        value: <+secrets.getValue("HARNESS_API_KEY_SECRET")>
+                        value: <+secrets.getValue(pipeline.variables.HARNESS_API_KEY_SECRET)> # Ensure pipeline scope for secret
                       - key: Content-Type
                         value: application/json
                     outputVariables:

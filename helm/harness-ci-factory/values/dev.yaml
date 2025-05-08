@@ -1,0 +1,44 @@
+# Development-specific values for harness-ci-factory
+# Use this file in addition to the main values.yaml and secrets.yaml
+
+global:
+  organization:
+    name: "CI Factory Dev"
+  
+  project:
+    name: "CI Image Management Dev"
+  
+  containerRegistry:
+    name: "docker.io/myorganization-dev"
+    connectorRef: "dockerhub-dev"
+  
+  kubernetes:
+    connectorRef: "development-k8s"
+    namespace: "harness-delegate-dev"
+
+# Development settings for RSS Monitor
+rssMonitor:
+  deployment:
+    replicas: 1
+    resources:
+      requests:
+        cpu: 100m
+        memory: 128Mi
+      limits:
+        cpu: 200m
+        memory: 256Mi
+  
+  config:
+    checkInterval: 15  # Faster checks for development
+    debug: true        # Enable debug mode in development
+
+# Development settings for Terraform
+terraform:
+  variables:
+    maxBuildConcurrency: 3
+    schedule: "*/30 * * * *"  # Run every 30 minutes for testing
+
+# Development trigger settings
+triggers:
+  ecrPolling:
+    schedule: "*/30 * * * *"  # Every 30 minutes for testing 

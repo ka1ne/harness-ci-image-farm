@@ -1,0 +1,156 @@
+pipeline:
+  name: Harness CI Image Factory Implementation
+  identifier: my_harness_ci_image_factory
+  projectIdentifier: ${PROJECT_ID}
+  orgIdentifier: ${ORG_ID}
+  tags:
+    role: harness-image-factory
+  variables:
+    - name: source_registry
+      type: String
+      description: "Source registry for Harness images"
+      value: ${SOURCE_REGISTRY}
+    - name: target_registry
+      type: String
+      description: "Target container registry where images will be stored"
+      value: ${TARGET_REGISTRY}
+    - name: registry_connector_source
+      type: String
+      description: "Connector ID for source registry authentication (if needed)"
+      value: ${SOURCE_REGISTRY_CONNECTOR}
+    - name: registry_connector_target
+      type: String
+      description: "Connector ID for target registry"
+      value: ${TARGET_REGISTRY_CONNECTOR}
+    - name: scan_images
+      type: String
+      description: "Whether to scan images for vulnerabilities"
+      value: ${SCAN_IMAGES}
+    - name: fail_on_severity
+      type: String
+      description: "Severity level to fail the build"
+      value: ${FAIL_ON_SEVERITY}
+    - name: filter_prefix
+      type: String
+      description: "Filter images by name prefix"
+      value: ${FILTER_PREFIX}
+    - name: harness_only
+      type: String
+      description: "Only process Harness official images"
+      value: ${HARNESS_ONLY}
+    - name: max_concurrency
+      type: Number
+      description: "Maximum number of concurrent operations"
+      value: ${MAX_CONCURRENCY}
+    - name: infrastructure_type
+      type: String
+      description: "Type of infrastructure (K8 or VM)"
+      value: ${INFRASTRUCTURE_TYPE}
+    - name: include_windows_rootless
+      type: String
+      description: "Include Windows rootless images"
+      value: ${INCLUDE_WINDOWS_ROOTLESS}
+    - name: modify_default
+      type: String
+      description: "Update the Harness Platform to use the newly pushed images"
+      value: ${MODIFY_DEFAULT}
+    - name: HARNESS_URL
+      type: String
+      description: "Harness platform URL"
+      value: ${HARNESS_URL}
+    - name: HARNESS_API_KEY_SECRET
+      type: String
+      description: "Secret identifier for Harness API key"
+      value: ${HARNESS_API_KEY_SECRET}
+
+  stages:
+    - stage:
+        name: Process Harness CI Images
+        identifier: process_harness_ci_images
+        description: "Pull, scan, and push Harness CI images to private registry"
+        template:
+          templateRef: harness_ci_image_factory # This might need project/org scope in actual Harness setup e.g. project.harness_ci_image_factory
+          versionLabel: "1.0.0" # Or a Git tag like v1.0.0 if using Git Experience
+        variables:
+          - name: source_registry
+            type: String
+            value: <+pipeline.variables.source_registry>
+          - name: target_registry
+            type: String
+            value: <+pipeline.variables.target_registry>
+          - name: registry_connector_source
+            type: String
+            value: <+pipeline.variables.registry_connector_source>
+          - name: registry_connector_target
+            type: String
+            value: <+pipeline.variables.registry_connector_target>
+          - name: scan_images
+            type: String
+            value: <+pipeline.variables.scan_images>
+          - name: fail_on_severity
+            type: String
+            value: <+pipeline.variables.fail_on_severity>
+          - name: filter_prefix
+            type: String
+            value: <+pipeline.variables.filter_prefix>
+          - name: harness_only
+            type: String
+            value: <+pipeline.variables.harness_only>
+          - name: max_concurrency
+            type: Number
+            value: <+pipeline.variables.max_concurrency>
+          - name: infrastructure_type
+            type: String
+            value: <+pipeline.variables.infrastructure_type>
+          - name: include_windows_rootless
+            type: String
+            value: <+pipeline.variables.include_windows_rootless>
+          - name: modify_default
+            type: String
+            value: <+pipeline.variables.modify_default>
+          - name: HARNESS_URL
+            type: String
+            value: <+pipeline.variables.HARNESS_URL>
+          - name: HARNESS_API_KEY_SECRET
+            type: String
+            value: <+pipeline.variables.HARNESS_API_KEY_SECRET>
+    
+  trigger:
+    name: Scheduled CI Image Factory
+    identifier: scheduled_ci_image_factory
+    template:
+      templateRef: harness_ci_image_factory_trigger # This might need project/org scope
+      versionLabel: "1.0.0" # Or a Git tag
+      inputYaml: |
+        pipelineIdentifier: my_harness_ci_image_factory
+        variables:
+          - name: source_registry
+            value: ${SOURCE_REGISTRY}
+          - name: target_registry
+            value: ${TARGET_REGISTRY}
+          - name: registry_connector_source
+            value: ${SOURCE_REGISTRY_CONNECTOR}
+          - name: registry_connector_target
+            value: ${TARGET_REGISTRY_CONNECTOR}
+          - name: scan_images
+            value: ${SCAN_IMAGES}
+          - name: fail_on_severity
+            value: ${FAIL_ON_SEVERITY}
+          - name: filter_prefix
+            value: ${FILTER_PREFIX}
+          - name: harness_only
+            value: ${HARNESS_ONLY}
+          - name: max_concurrency
+            value: ${MAX_CONCURRENCY}
+          - name: infrastructure_type
+            value: ${INFRASTRUCTURE_TYPE}
+          - name: include_windows_rootless
+            value: ${INCLUDE_WINDOWS_ROOTLESS}
+          - name: modify_default
+            value: ${MODIFY_DEFAULT}
+          - name: HARNESS_URL
+            value: ${HARNESS_URL}
+          - name: HARNESS_API_KEY_SECRET
+            value: ${HARNESS_API_KEY_SECRET}
+  
+  timeout: 120m 

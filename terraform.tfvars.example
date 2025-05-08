@@ -1,0 +1,27 @@
+# Terraform Variables Example File
+# Copy this to terraform.tfvars and fill in your actual values
+
+# Required Harness Credentials
+platform_api_key = "pat.YOUR_HARNESS_API_KEY_HERE.xxxxxxxxx"
+harness_account_id = "YOUR_HARNESS_ACCOUNT_ID_HERE"
+
+# Organization and Project IDs (optional, uncomment if needed)
+# harness_org_id     = "YOUR_HARNESS_ORG_ID_HERE"
+# harness_project_id = "YOUR_HARNESS_PROJECT_ID_HERE"
+
+# Additional configuration (uncomment and set as needed)
+# harness_platform_url = "https://app.harness.io/gateway"
+# harness_api_key_secret = "harness.apikey"
+# organization_name = "CI Image Factory"
+# create_organization = true
+# project_name = "CI Image Management"
+# create_project = true
+# container_registry = "docker.io/your-organization"
+# container_registry_type = "docker"
+# container_registry_connector_ref = "your-registry-connector"
+# kubernetes_connector_ref = "your-k8s-connector"
+# kubernetes_namespace = "harness-delegate"
+# max_build_concurrency = 5
+# enable_schedule = true
+# schedule = "0 2 * * *"
+# modify_default_image_config = true 

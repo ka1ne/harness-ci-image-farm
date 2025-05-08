@@ -1,0 +1,115 @@
+# Sample values configuration for Harness CI Factory
+# Customize the values below for your environment
+# For secrets, use a separate secrets.yaml file
+
+# Global settings
+global:
+  # Harness platform settings
+  harness:
+    platformUrl: "https://app.harness.io/gateway"
+    # NOTE: Secret values should be provided in a separate secrets.yaml file
+    # See secrets.yaml.example in the root directory for the format
+  
+  # Organization and project settings
+  organization:
+    # Name of the Harness organization to use or create
+    name: "CI Factory"
+    # Whether to create the organization if it doesn't exist
+    create: true
+  
+  project:
+    # Name of the Harness project to use or create
+    name: "Image Management"
+    # Whether to create the project if it doesn't exist
+    create: true
+  
+  # Registry settings for CI images
+  containerRegistry:
+    # Name of your container registry (e.g., "docker.io/myorg", "myacr.azurecr.io")
+    name: "docker.io/myorganization"
+    # Type of registry (docker or azure)
+    type: "docker"
+    # Reference to the Harness connector for this registry
+    connectorRef: "dockerhub"
+  
+  # Kubernetes connector for running image builds
+  kubernetes:
+    # Reference to your Kubernetes connector in Harness
+    connectorRef: "production-k8s"
+    # Namespace to use for building images
+    namespace: "harness-delegate"
+
+# RSS Monitor settings
+rssMonitor:
+  # Enable or disable the RSS monitor
+  enabled: true
+  
+  # Deployment settings
+  deployment:
+    # Number of replicas to run
+    replicas: 1
+    # Resource limits/requests
+    resources:
+      requests:
+        cpu: 100m
+        memory: 128Mi
+      limits:
+        cpu: 200m
+        memory: 256Mi
+  
+  # Configuration settings
+  config:
+    # Check interval in minutes
+    checkInterval: 60
+    # Debug mode
+    debug: false
+    # List of target images to monitor
+    targetImages:
+      - "harness/ci-addon"
+      - "harness/ci-lite-engine"
+      - "harness/drone-git"
+  
+  # Service account settings
+  serviceAccount:
+    create: true
+    name: "harness-rss-monitor"
+
+# Terraform settings (for provisioning Harness resources)
+terraform:
+  # Enable or disable the Terraform job
+  enabled: true
+
+  # Job settings
+  job:
+    # Terraform action to perform
+    action: "apply" # "apply" or "destroy"
+    resources:
+      requests:
+        cpu: 100m
+        memory: 128Mi
+      limits:
+        cpu: 500m
+        memory: 512Mi
+  
+  # Terraform variables
+  variables:
+    # Maximum number of simultaneous builds to perform
+    maxBuildConcurrency: 5
+    # Enable schedule for pipeline execution
+    enableSchedule: true
+    # Schedule for pipeline execution (cron format)
+    schedule: "0 2 * * *"
+    # Update default image configuration
+    modifyDefaultImageConfig: true
+
+# Triggers configuration  
+triggers:
+  # Enable the ECR polling trigger
+  ecrPolling:
+    enabled: true
+    # Polling schedule (6 hours by default)
+    schedule: "0 */6 * * *"
+  
+  # Enable RSS webhook trigger
+  rssWebhook:
+    enabled: true 
