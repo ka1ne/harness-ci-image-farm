@@ -3,10 +3,10 @@
 
 global:
   organization:
-    name: "CI Factory Dev"
+    name: "organization"
   
   project:
-    name: "CI Image Management Dev"
+    name: "project"
   
   containerRegistry:
     name: "docker.io/myorganization-dev"
@@ -14,7 +14,7 @@ global:
   
   kubernetes:
     connectorRef: "development-k8s"
-    namespace: "harness-delegate-dev"
+    namespace: "harness-delegate-ng"
 
 # Development settings for RSS Monitor
 rssMonitor:

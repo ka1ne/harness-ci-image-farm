@@ -12,6 +12,7 @@ metadata:
   annotations:
     "helm.sh/hook": post-install,post-upgrade
     "helm.sh/hook-weight": "0"
+    "helm.sh/hook-delete-policy": "before-hook-creation,hook-succeeded"
 spec:
   backoffLimit: 10
   ttlSecondsAfterFinished: 3600
@@ -23,6 +24,23 @@ spec:
     spec:
       restartPolicy: OnFailure
       serviceAccountName: {{ .Release.Name }}-terraform
+      initContainers:
+        - name: copy-terraform-files
+          image: busybox:1.35.0
+          imagePullPolicy: IfNotPresent
+          command:
+            - "/bin/sh"
+            - "-c"
+            - |
+              set -e
+              echo "Copying Terraform configuration files to writable volume..."
+              # Copy all files to workspace
+              cp -Lrvf /source/* /terraform-workspace/
+          volumeMounts:
+            - name: terraform-config-files
+              mountPath: /source
+            - name: terraform-workspace
+              mountPath: /terraform-workspace
       containers:
         - name: terraform
           image: hashicorp/terraform:1.5.7
@@ -33,16 +51,14 @@ spec:
             - |
               set -e
               
-              # Create terraform vars in /tmp
-              cat <<EOF > /tmp/terraform.tfvars
+              # Create terraform vars in the writable workspace
+              cat <<EOF > /workspace/terraform.tfvars
               harness_platform_url = "$HARNESS_PLATFORM_URL"
               harness_platform_account = "$HARNESS_ACCOUNT_ID"
               harness_platform_key = "$HARNESS_API_KEY"
               harness_api_key_secret = "$HARNESS_API_KEY_SECRET"
-              organization_name = "$ORGANIZATION_NAME"
-              create_organization = $CREATE_ORGANIZATION
-              project_name = "$PROJECT_NAME"
-              create_project = $CREATE_PROJECT
+              harness_organization_id = "$HARNESS_ORGANIZATION_ID"
+              harness_project_id = "$HARNESS_PROJECT_ID"
               container_registry = "$CONTAINER_REGISTRY"
               container_registry_type = "$CONTAINER_REGISTRY_TYPE"
               container_registry_connector_ref = "$CONTAINER_REGISTRY_CONNECTOR_REF"
@@ -54,11 +70,23 @@ spec:
               modify_default_image_config = $MODIFY_DEFAULT_IMAGE_CONFIG
               EOF
               
-              # Initialize terraform (runs in /workspace where main.tf is)
+              # List workspace contents for debugging
+              echo "--- Listing /workspace contents ---"
+              ls -la /workspace;
+              echo "--- End of /workspace listing ---"
+              
+              # Additional debugging
+              echo "--- Checking template files ---"
+              find /workspace -type f -name "*.yaml" | sort
+              echo "--- Sample template content ---"
+              head -n 5 /workspace/templates.templates.gather-harness-ci-image-list.yaml
+              echo "---"
+              
+              # Initialize terraform (runs in writable volume)
               terraform init
               
-              # Run terraform action, explicitly using the var-file from /tmp
-              terraform {{ .Values.terraform.job.action }} -var-file=/tmp/terraform.tfvars -auto-approve
+              # Run terraform action, explicitly using the var-file from workspace
+              terraform {{ .Values.terraform.job.action }} -var-file=/workspace/terraform.tfvars -auto-approve
           resources:
             {{- toYaml .Values.terraform.job.resources | nindent 12 }}
           env:
@@ -81,14 +109,10 @@ spec:
                 secretKeyRef:
                   name: {{ .Release.Name }}-harness-credentials
                   key: apiKeySecret
-            - name: ORGANIZATION_NAME
-              value: {{ .Values.global.organization.name | quote }}
-            - name: CREATE_ORGANIZATION
-              value: {{ .Values.global.organization.create | quote }}
-            - name: PROJECT_NAME
-              value: {{ .Values.global.project.name | quote }}
-            - name: CREATE_PROJECT
-              value: {{ .Values.global.project.create | quote }}
+            - name: HARNESS_ORGANIZATION_ID
+              value: {{ .Values.global.harness.organizationId | quote }}
+            - name: HARNESS_PROJECT_ID
+              value: {{ .Values.global.harness.projectId | quote }}
             - name: CONTAINER_REGISTRY
               value: {{ .Values.global.containerRegistry.name | quote }}
             - name: CONTAINER_REGISTRY_TYPE
@@ -108,17 +132,19 @@ spec:
             - name: MODIFY_DEFAULT_IMAGE_CONFIG
               value: {{ .Values.terraform.variables.modifyDefaultImageConfig | quote }}
           volumeMounts:
-            - name: terraform-workspace-files
+            - name: terraform-workspace
               mountPath: /workspace
           workingDir: /workspace
       volumes:
-        - name: terraform-workspace-files
+        - name: terraform-config-files
           projected:
             sources:
             - configMap:
                 name: {{ .Release.Name }}-terraform-code
             - configMap:
                 name: {{ .Release.Name }}-terraform-templates
+        - name: terraform-workspace
+          emptyDir: {}
 ---
 # Create Service Account for Terraform Job
 apiVersion: v1

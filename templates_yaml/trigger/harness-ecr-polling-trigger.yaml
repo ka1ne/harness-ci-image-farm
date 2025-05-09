@@ -1,0 +1,34 @@
+trigger:
+  name: Harness ECR Registry Poll Trigger
+  identifier: harness_ecr_registry_poll
+  description: "Polls ECR registry for new Harness images and runs CI Image Factory"
+  enabled: true
+  tags:
+    created_by: Terraform
+    role: harness-ci-image-factory
+    type: scheduled
+    source: ecr-public
+  
+  # Source definition
+  source:
+    type: Scheduled
+    spec:
+      type: Cron
+      spec:
+        expression: ${SCHEDULE}  # Default is "0 */6 * * *" (every 6 hours)
+        timeZone: UTC
+  
+  # Pipeline inputs to be filled automatically
+  inputYaml: |
+    pipeline:
+      identifier: ${PIPELINE_ID}
+      variables:
+        - name: registry
+          type: String
+          value: ${REGISTRY_NAME}
+        - name: is_retry
+          type: String
+          value: "false"
+        - name: modify_default
+          type: String
+          value: ${MODIFY_DEFAULT} 

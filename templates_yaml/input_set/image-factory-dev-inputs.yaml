@@ -1,0 +1,24 @@
+inputSet:
+  name: Image Factory Dev Environment Inputs
+  identifier: image_factory_dev_inputs
+  orgIdentifier: <+variable.org_id>
+  projectIdentifier: <+variable.project_id>
+  pipeline:
+    identifier: <+pipeline.identifier>  # Will be replaced with PIPELINE_ID
+    variables:
+      - name: "registryName"
+        type: "String"
+        value: "<+variable.REGISTRY_NAME>"
+      - name: "modifyDefault"
+        type: "Boolean"
+        value: "<+variable.MODIFY_DEFAULT>"
+      - name: "environment"
+        type: "String"
+        value: "development"
+      - name: "concurrency"
+        type: "Number"
+        value: "2"  # Lower concurrency for dev
+  tags:
+    environment: "development"
+    role: "harness-ci-image-factory"
+    managed-by: "terraform" 

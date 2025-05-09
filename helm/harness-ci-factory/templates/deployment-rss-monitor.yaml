@@ -35,9 +35,8 @@ spec:
               
               # Create app directory
               mkdir -p /app/src
-              cat > /app/src/main.go << 'EOF'
-              {{- .Files.Get "../../tools/rss-monitor/main.go" | nindent 14 }}
-              EOF
+              # Copy the pre-mounted Go source file
+              cp /app/main-src/main.go /app/src/main.go
               
               # Build the application
               echo "Building RSS monitor application..."
@@ -67,15 +66,24 @@ spec:
               value: "{{ .Values.rssMonitor.config.debug }}"
             - name: TARGET_IMAGES
               value: {{ join "," .Values.rssMonitor.config.targetImages | quote }}
+            {{- if .Values.rssMonitor.testMode.enabled }}
+            - name: TEST_MODE
+              value: "true"
+            {{- end }}
           resources:
             {{- toYaml .Values.rssMonitor.deployment.resources | nindent 12 }}
           volumeMounts:
             - name: rss-monitor-state
               mountPath: /app/data
+            - name: rss-monitor-source
+              mountPath: /app/main-src
       volumes:
         - name: rss-monitor-state
           persistentVolumeClaim:
             claimName: {{ .Release.Name }}-rss-monitor-state
+        - name: rss-monitor-source
+          configMap:
+            name: {{ .Release.Name }}-rss-monitor-source
 ---
 apiVersion: v1
 kind: PersistentVolumeClaim

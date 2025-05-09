@@ -1,6 +1,6 @@
 # Harness CI Image Factory
 
-A solution to manage Harness CI build images in your container registry with security scanning capabilities.
+A solution to manage Harness CI build images in your container registry with security scanning capabilities, built with native Harness Terraform provider resources.
 
 ## Overview
 
@@ -9,6 +9,16 @@ This solution enables you to:
 - Scan images for vulnerabilities
 - Push to your private registry
 - Configure Harness to use your registry's images
+
+## Architecture
+
+This solution uses native Harness Terraform provider resources rather than community modules, providing:
+- Better control and versioning
+- Direct provider support
+- Git integration for templates
+- Simplified resource management
+
+See [NATIVE_APPROACH.md](./NATIVE_APPROACH.md) for more details on the benefits of this approach.
 
 ## Quick Start
 
@@ -36,23 +46,12 @@ This solution enables you to:
    vim secrets.yaml terraform.tfvars
    ```
 
-3. Deploy with Helm:
+3. Deploy with Terraform:
    ```bash
-   # Development deployment
-   helm upgrade --install harness-ci-factory ./helm/harness-ci-factory \
-     -f values.yaml -f secrets.yaml -f values/dev.yaml
-   
-   # Production deployment
-   helm upgrade --install harness-ci-factory ./helm/harness-ci-factory \
-     -f values.yaml -f secrets.yaml -f values/prod.yaml
+   terraform init
+   terraform plan -var-file=terraform.tfvars
+   terraform apply -var-file=terraform.tfvars
    ```
-   
-### Alternative: Terraform Deployment
-
-```bash
-terraform init
-terraform apply -var-file=terraform.tfvars
-```
 
 ## Key Features
 
@@ -61,12 +60,33 @@ terraform apply -var-file=terraform.tfvars
 - **Security scanning**: Scan images before deployment
 - **Custom registry**: Use your preferred container registry
 - **Automated updates**: Monitor for new Harness CI image releases
+- **Git integration**: Store templates in Git repositories (see `git_template_example.tf`)
+- **Resource tagging**: Comprehensive tagging for easy resource management
+
+## Advanced Usage
+
+### Git-based Templates
+
+For enterprise environments, we support Git-based templates:
+
+```bash
+# Enable Git-based templates
+terraform apply -var-file=terraform.tfvars -var="use_git_templates=true"
+```
+
+See `git_template_example.tf` for a detailed example.
+
+### Migration from Community Modules
+
+If you're migrating from community modules to native resources, follow our migration guide:
+
+- [MIGRATION_GUIDE.md](./MIGRATION_GUIDE.md)
 
 ## Configuration Reference
 
-For detailed configuration options:
-- See `helm/harness-ci-factory/VALUES.md` for Helm values documentation
-- See `CONFIGURATION_MAPPING.md` for mapping between Helm and Terraform variables
+For detailed configuration options, see:
+- [variables.tf](./variables.tf) for all available variables
+- [terraform.tfvars.example](./terraform.tfvars.example) for example configuration
 
 ## Troubleshooting
 

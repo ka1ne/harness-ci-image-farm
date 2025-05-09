@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"io/ioutil"
 	"log"
+	"math/rand"
 	"net/http"
 	"os"
 	"regexp"
@@ -18,15 +19,17 @@ import (
 const (
 	// RSS feed URL for Harness CI release notes
 	HarnessRSSFeedURL = "https://developer.harness.io/release-notes/continuous-integration/rss.xml"
+	// Local test feed when in test mode
+	TestRSSFeedURL = "http://localhost:8080/rss.xml"
 
 	// User agent for the HTTP client
 	UserAgent = "Harness-CI-Image-Monitor/1.0"
 
 	// Default check interval in minutes
-	DefaultCheckInterval = 60
+	DefaultCheckInterval = 1 // Reduced for testing
 
 	// Path to store the last processed release
-	DefaultStateFile = "last_processed_release.json"
+	DefaultStateFile = "/app/data/last_processed_release.json"
 )
 
 // RSS Feed structures
@@ -83,6 +86,7 @@ func parseConfig() *Config {
 	flag.StringVar(&config.StateFilePath, "state-file", os.Getenv("STATE_FILE_PATH"), "Path to state file")
 	intervalStr := flag.String("interval", os.Getenv("CHECK_INTERVAL"), "Check interval in minutes")
 	flag.BoolVar(&config.DebugMode, "debug", os.Getenv("DEBUG_MODE") == "true", "Enable debug mode")
+	testMode := os.Getenv("TEST_MODE") == "true"
 
 	flag.Parse()
 
@@ -98,6 +102,14 @@ func parseConfig() *Config {
 		if config.CheckInterval < 1 {
 			config.CheckInterval = DefaultCheckInterval
 		}
+	}
+
+	// In test mode, we use a different feed URL
+	if testMode {
+		log.Println("Running in TEST MODE - using local mock server")
+		startMockServer()
+		// Wait for the server to start
+		time.Sleep(500 * time.Millisecond)
 	}
 
 	// Validate required configuration
@@ -149,7 +161,9 @@ func saveState(state *State, filePath string) error {
 }
 
 // Fetch the RSS feed
-func fetchRSSFeed(url string) (*RSS, error) {
+func fetchRSSFeed(url string, debug bool) (*RSS, error) {
+	log.Printf("Fetching RSS feed from: %s", url)
+
 	// Create HTTP client
 	client := &http.Client{
 		Timeout: 30 * time.Second,
@@ -165,16 +179,23 @@ func fetchRSSFeed(url string) (*RSS, error) {
 	req.Header.Set("User-Agent", UserAgent)
 
 	// Send request
+	log.Printf("Sending HTTP request...")
 	resp, err := client.Do(req)
 	if err != nil {
 		return nil, err
 	}
 	defer resp.Body.Close()
 
+	log.Printf("Received HTTP response with status: %s", resp.Status)
+
 	// Read response body
 	body, err := ioutil.ReadAll(resp.Body)
 	if err != nil {
 		return nil, err
+	}
+
+	if debug {
+		log.Printf("Response body: %s", string(body))
 	}
 
 	// Parse XML
@@ -184,6 +205,7 @@ func fetchRSSFeed(url string) (*RSS, error) {
 		return nil, err
 	}
 
+	log.Printf("Successfully parsed RSS feed with %d items", len(rss.Channel.Items))
 	return rss, nil
 }
 
@@ -254,6 +276,80 @@ func sendWebhook(webhookURL, apiKey string, payload *WebhookPayload, debug bool)
 	return nil
 }
 
+// Create a mock RSS feed for testing
+func startMockServer() {
+	// Create the initial RSS feed
+	rss := &RSS{
+		Channel: Channel{
+			Title:       "Harness CI Release Notes",
+			Description: "Latest release notes for Harness CI",
+			Link:        "https://developer.harness.io/release-notes/continuous-integration",
+			Items: []Item{
+				{
+					Title:       "Harness CI 1.15.0",
+					Link:        "https://developer.harness.io/release-notes/continuous-integration/1.15.0",
+					PubDate:     time.Now().Add(-24 * time.Hour).Format(time.RFC1123),
+					Description: "Harness CI 1.15.0 Release Notes",
+					Content:     "<h2>Image Updates</h2><table><thead><tr><th>Image</th><th>Old Version</th><th>New Version</th></tr></thead><tbody><tr><td>harness/ci-manager</td><td>1.14.0</td><td>1.15.0</td></tr><tr><td>harness/drone-git</td><td>1.1.0</td><td>1.2.0</td></tr><tr><td>harness/drone-runner</td><td>1.0.1</td><td>1.1.0</td></tr></tbody></table>",
+				},
+			},
+		},
+	}
+
+	// Start the HTTP server
+	http.HandleFunc("/rss.xml", func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/xml")
+
+		// Add a new release 10% of the time
+		if rand.Float32() < 0.1 {
+			log.Println("Adding a new release to the mock feed")
+			addNewRelease(rss)
+		}
+
+		// Marshal the RSS feed to XML
+		output, err := xml.MarshalIndent(rss, "", "  ")
+		if err != nil {
+			http.Error(w, err.Error(), http.StatusInternalServerError)
+			return
+		}
+
+		// Write the XML declaration and then the RSS feed
+		w.Write([]byte(xml.Header))
+		w.Write(output)
+	})
+
+	// Start the server in a goroutine
+	go func() {
+		log.Println("Starting mock RSS feed server on http://localhost:8080/rss.xml")
+		if err := http.ListenAndServe(":8080", nil); err != nil {
+			log.Printf("Mock server error: %v", err)
+		}
+	}()
+}
+
+// Add a new release to the mock RSS feed
+func addNewRelease(rss *RSS) {
+	// Generate a new version
+	major := rand.Intn(2) + 1
+	minor := rand.Intn(20)
+	patch := rand.Intn(10)
+	version := fmt.Sprintf("%d.%d.%d", major, minor, patch)
+
+	// Create a new item
+	newItem := Item{
+		Title:       fmt.Sprintf("Harness CI %s", version),
+		Link:        fmt.Sprintf("https://developer.harness.io/release-notes/continuous-integration/%s", version),
+		PubDate:     time.Now().Format(time.RFC1123),
+		Description: fmt.Sprintf("Harness CI %s Release Notes", version),
+		Content:     fmt.Sprintf("<h2>Image Updates</h2><table><thead><tr><th>Image</th><th>Old Version</th><th>New Version</th></tr></thead><tbody><tr><td>harness/ci-manager</td><td>1.15.0</td><td>%s</td></tr><tr><td>harness/drone-git</td><td>1.2.0</td><td>1.3.0</td></tr><tr><td>harness/drone-runner</td><td>1.1.0</td><td>1.2.0</td></tr></tbody></table>", version),
+	}
+
+	// Insert the new item at the beginning
+	rss.Channel.Items = append([]Item{newItem}, rss.Channel.Items...)
+
+	log.Printf("Added new release: Harness CI %s", version)
+}
+
 // Process RSS feed items
 func processRSSFeed(config *Config) error {
 	// Load state
@@ -262,8 +358,14 @@ func processRSSFeed(config *Config) error {
 		return fmt.Errorf("failed to load state: %v", err)
 	}
 
+	// Determine which feed URL to use based on TEST_MODE
+	feedURL := HarnessRSSFeedURL
+	if os.Getenv("TEST_MODE") == "true" {
+		feedURL = TestRSSFeedURL
+	}
+
 	// Fetch RSS feed
-	rss, err := fetchRSSFeed(HarnessRSSFeedURL)
+	rss, err := fetchRSSFeed(feedURL, config.DebugMode)
 	if err != nil {
 		return fmt.Errorf("failed to fetch RSS feed: %v", err)
 	}
@@ -277,8 +379,8 @@ func processRSSFeed(config *Config) error {
 	for i := len(rss.Channel.Items) - 1; i >= 0; i-- {
 		item := rss.Channel.Items[i]
 
-		// Parse publish date
-		pubDate, err := time.Parse(time.RFC1123Z, item.PubDate)
+		// Parse the publish date
+		pubDate, err := time.Parse(time.RFC1123, item.PubDate)
 		if err != nil {
 			log.Printf("Failed to parse publish date '%s': %v", item.PubDate, err)
 			continue
@@ -352,6 +454,9 @@ func processRSSFeed(config *Config) error {
 }
 
 func main() {
+	// Initialize random seed
+	rand.Seed(time.Now().UnixNano())
+
 	// Parse configuration
 	config := parseConfig()
 

@@ -1,0 +1,165 @@
+template:
+  name: Harness Image Security Scan
+  identifier: harness_image_security_scan
+  versionLabel: "1.0.0"
+  type: Step
+  projectIdentifier: ${PROJECT_ID}
+  orgIdentifier: ${ORG_ID}
+  tags:
+    role: harness-security-scan
+    scope: template
+  spec:
+    type: ShellScript
+    spec:
+      shell: Bash
+      source:
+        type: Inline
+        spec:
+          script: |
+            #!/bin/bash
+            set -e
+            
+            # Get input parameters with defaults
+            REGISTRY="<+input>.default('public.ecr.aws/harness')"
+            IMAGE_NAME="<+input>"
+            IMAGE_TAG="<+input>"
+            FULL_IMAGE_NAME_WITH_TAG="<+input>.default('')"
+            FAIL_ON_SEVERITY="<+input>.default('CRITICAL')"
+            FAIL_BUILD="<+input>.default('true')"
+            OUTPUT_DIR="<+input>.default('scan-results')"
+            IGNORE_UNFIXED="<+input>.default('true')"
+            
+            # Determine the scan target
+            SCAN_TARGET=""
+            DISPLAY_NAME=""
+            if [ -n "$FULL_IMAGE_NAME_WITH_TAG" ]; then
+              SCAN_TARGET="$FULL_IMAGE_NAME_WITH_TAG"
+              DISPLAY_NAME="$FULL_IMAGE_NAME_WITH_TAG"
+            else
+              SCAN_TARGET="$REGISTRY/$IMAGE_NAME:$IMAGE_TAG"
+              DISPLAY_NAME="$REGISTRY/$IMAGE_NAME:$IMAGE_TAG"
+              if [[ "$IMAGE_NAME" == *"$REGISTRY"* ]]; then
+                SCAN_TARGET="$IMAGE_NAME:$IMAGE_TAG"
+                DISPLAY_NAME="$IMAGE_NAME:$IMAGE_TAG"
+              fi
+            fi
+            
+            # Log settings
+            echo "Scanning image with the following settings:"
+            echo "Image: $DISPLAY_NAME"
+            echo "Fail on severity: $FAIL_ON_SEVERITY"
+            echo "Fail build: $FAIL_BUILD"
+            echo "Output directory: $OUTPUT_DIR"
+            echo "Ignore unfixed vulnerabilities: $IGNORE_UNFIXED"
+            
+            # Install Trivy if not available (with version pinning for repeatability)
+            if ! command -v trivy &> /dev/null; then
+              echo "Installing Trivy vulnerability scanner..."
+              curl -sfL https://raw.githubusercontent.com/aquasecurity/trivy/main/contrib/install.sh | sh -s -- -b /usr/local/bin v0.38.0
+            fi
+            
+            # Setup severity thresholds based on input
+            SEVERITY_ARGS=""
+            case "$FAIL_ON_SEVERITY" in
+              "CRITICAL")
+                SEVERITY_ARGS="CRITICAL"
+                ;;
+              "HIGH")
+                SEVERITY_ARGS="CRITICAL,HIGH"
+                ;;
+              "MEDIUM")
+                SEVERITY_ARGS="CRITICAL,HIGH,MEDIUM"
+                ;;
+              "LOW")
+                SEVERITY_ARGS="CRITICAL,HIGH,MEDIUM,LOW"
+                ;;
+              "UNKNOWN")
+                SEVERITY_ARGS="CRITICAL,HIGH,MEDIUM,LOW,UNKNOWN"
+                ;;
+            esac
+            
+            # Create output directory
+            mkdir -p $OUTPUT_DIR
+            
+            # Additional args for ignoring unfixed vulnerabilities
+            IGNORE_ARGS=""
+            if [ "$IGNORE_UNFIXED" == "true" ]; then
+              IGNORE_ARGS="--ignore-unfixed"
+            fi
+            
+            # Run the scan, capturing both JSON and table outputs
+            echo "Scanning image $DISPLAY_NAME..."
+            set +e
+            trivy image --no-progress --severity $SEVERITY_ARGS $IGNORE_ARGS --format json -o $OUTPUT_DIR/results.json "$SCAN_TARGET"
+            SCAN_EXIT_CODE=$?
+            
+            # Also generate a human-readable report
+            trivy image --no-progress --severity $SEVERITY_ARGS $IGNORE_ARGS "$SCAN_TARGET" > $OUTPUT_DIR/results.txt
+            set -e
+            
+            # Process results
+            if [ $SCAN_EXIT_CODE -ne 0 ]; then
+              echo "⚠️ Vulnerabilities found at severity level $FAIL_ON_SEVERITY or higher"
+              
+              # Calculate statistics
+              VULN_COUNT=$(cat $OUTPUT_DIR/results.json | jq '.Results | map(.Vulnerabilities // []) | flatten | length')
+              echo "Found $VULN_COUNT vulnerabilities"
+              
+              # Generate markdown summary report
+              echo "## Vulnerability Report for $DISPLAY_NAME" > $OUTPUT_DIR/summary.md
+              echo "" >> $OUTPUT_DIR/summary.md
+              echo "Total vulnerabilities: $VULN_COUNT" >> $OUTPUT_DIR/summary.md
+              echo "" >> $OUTPUT_DIR/summary.md
+              
+              # Summary by severity
+              echo "### Vulnerabilities by Severity" >> $OUTPUT_DIR/summary.md
+              cat $OUTPUT_DIR/results.json | jq -r '.Results | map(.Vulnerabilities // []) | flatten | group_by(.Severity) | map({severity: .[0].Severity, count: length}) | .[] | "- **\(.severity)**: \(.count)"' >> $OUTPUT_DIR/summary.md
+              echo "" >> $OUTPUT_DIR/summary.md
+              
+              # Extract critical vulnerabilities for highlighting
+              echo "### Critical Vulnerabilities" >> $OUTPUT_DIR/summary.md
+              CRITICAL_COUNT=$(cat $OUTPUT_DIR/results.json | jq -r '.Results | map(.Vulnerabilities // []) | flatten | select(.Severity == "CRITICAL") | length')
+              
+              if [ "$CRITICAL_COUNT" -gt 0 ]; then
+                cat $OUTPUT_DIR/results.json | jq -r '.Results | map(.Vulnerabilities // []) | flatten | select(.Severity == "CRITICAL") | "- **\(.VulnerabilityID)**: \(.Title) (CVSS: \(.CVSS.V3Score // "N/A"))"' >> $OUTPUT_DIR/summary.md
+              else
+                echo "No critical vulnerabilities found." >> $OUTPUT_DIR/summary.md
+              fi
+              
+              # Attach results to Harness UI for later review
+              if command -v harness &> /dev/null; then
+                harness artifact push --name "security-scan-results" --service-id "<+service.identifier>" $OUTPUT_DIR/results.json $OUTPUT_DIR/summary.md $OUTPUT_DIR/results.txt
+              fi
+              
+              # Either fail the build or just warn based on configuration
+              if [ "$FAIL_BUILD" == "true" ]; then
+                echo "❌ Security scan failed: vulnerabilities found at severity level $FAIL_ON_SEVERITY or higher"
+                harness_io out scan_passed="false"
+                harness_io out vulnerability_count="$VULN_COUNT"
+                exit 1
+              else
+                echo "⚠️ Vulnerabilities found but continuing pipeline as fail_build=false"
+                harness_io out scan_passed="false"
+                harness_io out vulnerability_count="$VULN_COUNT"
+              fi
+            else
+              echo "✅ Security scan passed: no vulnerabilities found at severity level $FAIL_ON_SEVERITY or higher"
+              harness_io out scan_passed="true"
+              harness_io out vulnerability_count="0"
+            fi
+      outputVariables:
+        - name: scan_passed
+        - name: vulnerability_count
+      environmentVariables: []
+    timeout: 15m
+    failureStrategies:
+      - onFailure:
+          errors:
+            - AllErrors
+          action:
+            type: Retry
+            spec:
+              retryCount: 1
+              onRetryFailure:
+                action:
+                  type: MarkAsFailure 

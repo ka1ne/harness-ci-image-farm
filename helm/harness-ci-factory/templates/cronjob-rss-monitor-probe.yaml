@@ -1,0 +1,262 @@
+{{- if and .Values.rssMonitor.enabled .Values.rssMonitor.livenessProbe.enabled }}
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: {{ .Release.Name }}-rss-monitor-probe
+  namespace: {{ .Release.Namespace }}
+  labels:
+    app.kubernetes.io/name: {{ .Release.Name }}-rss-monitor-probe
+    app.kubernetes.io/instance: {{ .Release.Name }}
+spec:
+  schedule: {{ .Values.rssMonitor.livenessProbe.schedule | quote }}
+  successfulJobsHistoryLimit: {{ .Values.rssMonitor.livenessProbe.successfulJobsHistoryLimit }}
+  failedJobsHistoryLimit: {{ .Values.rssMonitor.livenessProbe.failedJobsHistoryLimit }}
+  concurrencyPolicy: Forbid
+  jobTemplate:
+    spec:
+      template:
+        spec:
+          containers:
+          - name: rss-monitor-probe
+            image: python:3.9-alpine
+            imagePullPolicy: IfNotPresent
+            command:
+            - /bin/sh
+            - -c
+            - |
+              set -e
+              
+              # Install required packages
+              apk add --no-cache curl bash jq
+
+              # Create working directory
+              mkdir -p /tmp/probe
+              cd /tmp/probe
+              
+              # Create the mock RSS feed
+              cat > rss.xml << 'EOF'
+              <?xml version="1.0" encoding="UTF-8"?>
+              <rss version="2.0">
+                <channel>
+                  <title>Harness CI Release Notes</title>
+                  <description>Latest release notes for Harness CI</description>
+                  <link>https://developer.harness.io/release-notes/continuous-integration</link>
+                  <item>
+                    <title>Harness CI 1.15.0</title>
+                    <link>https://developer.harness.io/release-notes/continuous-integration/1.15.0</link>
+                    <pubDate>Wed, 08 May 2025 10:00:00 GMT</pubDate>
+                    <description>Harness CI 1.15.0 Release Notes</description>
+                    <encoded><![CDATA[<h2>Image Updates</h2><table><thead><tr><th>Image</th><th>Old Version</th><th>New Version</th></tr></thead><tbody><tr><td>harness/ci-manager</td><td>1.14.0</td><td>1.15.0</td></tr><tr><td>harness/drone-git</td><td>1.1.0</td><td>1.2.0</td></tr><tr><td>harness/drone-runner</td><td>1.0.1</td><td>1.1.0</td></tr></tbody></table>]]></encoded>
+                  </item>
+                </channel>
+              </rss>
+              EOF
+              
+              # Create the Python HTTP server
+              cat > server.py << 'EOF'
+              #!/usr/bin/env python3
+              from http.server import HTTPServer, SimpleHTTPRequestHandler
+              import os
+              import logging
+              import threading
+              import time
+
+              # Set up logging
+              logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(message)s')
+
+              # Change to the directory containing the RSS file
+              os.chdir(os.path.dirname(os.path.abspath(__file__)))
+
+              class CustomHandler(SimpleHTTPRequestHandler):
+                  def log_request(self, code='-', size='-'):
+                      logging.info(f"Request: {self.requestline} ({code})")
+                      
+                  def end_headers(self):
+                      self.send_header('Access-Control-Allow-Origin', '*')
+                      SimpleHTTPRequestHandler.end_headers(self)
+
+              def run_server():
+                  server = HTTPServer(('', 8080), CustomHandler)
+                  logging.info(f"Started mock Harness feed server on port 8080 in {os.getcwd()}")
+                  server.serve_forever()
+
+              # Start the server in a background thread
+              thread = threading.Thread(target=run_server, daemon=True)
+              thread.start()
+              EOF
+              
+              # Create the release generator
+              cat > new_release.py << 'EOF'
+              #!/usr/bin/env python3
+              import xml.etree.ElementTree as ET
+              import datetime
+              import random
+              import os
+              import json
+              import sys
+
+              # Path to the RSS feed file
+              RSS_PATH = os.path.join(os.path.dirname(os.path.abspath(__file__)), "rss.xml")
+              RESULT_PATH = os.path.join(os.path.dirname(os.path.abspath(__file__)), "probe_result.json")
+
+              # Generate a new version number
+              def generate_version():
+                  major = random.randint(1, 2)
+                  minor = random.randint(0, 20)
+                  patch = random.randint(0, 9)
+                  return f"{major}.{minor}.{patch}"
+
+              # Generate current date in RSS feed format
+              def generate_date():
+                  now = datetime.datetime.now()
+                  return now.strftime("%a, %d %b %Y %H:%M:%S GMT")
+
+              try:
+                  # Parse existing RSS feed
+                  tree = ET.parse(RSS_PATH)
+                  root = tree.getroot()
+                  channel = root.find("channel")
+
+                  # Create a new item
+                  new_item = ET.Element("item")
+                  title = ET.SubElement(new_item, "title")
+                  new_version = generate_version()
+                  title.text = f"Harness CI {new_version}"
+
+                  link = ET.SubElement(new_item, "link")
+                  link.text = f"https://developer.harness.io/release-notes/continuous-integration/{new_version}"
+
+                  pubDate = ET.SubElement(new_item, "pubDate")
+                  pubDate.text = generate_date()
+
+                  description = ET.SubElement(new_item, "description")
+                  description.text = f"Harness CI {new_version} Release Notes"
+
+                  encoded = ET.SubElement(new_item, "encoded")
+                  encoded.text = f"""<![CDATA[
+              <h2>Image Updates</h2>
+              <table>
+                <thead>
+                  <tr>
+                    <th>Image</th>
+                    <th>Old Version</th>
+                    <th>New Version</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  <tr>
+                    <td>harness/ci-manager</td>
+                    <td>1.15.0</td>
+                    <td>{new_version}</td>
+                  </tr>
+                  <tr>
+                    <td>harness/drone-git</td>
+                    <td>1.2.0</td>
+                    <td>1.3.0</td>
+                  </tr>
+                  <tr>
+                    <td>harness/drone-runner</td>
+                    <td>1.1.0</td>
+                    <td>1.2.0</td>
+                  </tr>
+                </tbody>
+              </table>
+              ]]>"""
+
+                  # Insert the new item at the beginning of the channel
+                  channel.insert(3, new_item)  # Insert after title, description, link
+
+                  # Write the modified RSS feed back to the file
+                  tree.write(RSS_PATH, encoding="UTF-8", xml_declaration=True)
+                  print(f"Added new release: Harness CI {new_version}")
+                  
+                  # Store the result for later verification
+                  result = {
+                      "success": True,
+                      "version": new_version,
+                      "timestamp": datetime.datetime.now().isoformat(),
+                      "images": [
+                          {"name": "harness/ci-manager", "version": new_version},
+                          {"name": "harness/drone-git", "version": "1.3.0"},
+                          {"name": "harness/drone-runner", "version": "1.2.0"}
+                      ]
+                  }
+                  with open(RESULT_PATH, 'w') as f:
+                      json.dump(result, f)
+                      
+              except Exception as e:
+                  print(f"Error generating release: {str(e)}")
+                  result = {
+                      "success": False,
+                      "error": str(e),
+                      "timestamp": datetime.datetime.now().isoformat()
+                  }
+                  with open(RESULT_PATH, 'w') as f:
+                      json.dump(result, f)
+                  sys.exit(1)
+              EOF
+              
+              # Start the server
+              echo "Starting mock feed server..."
+              python3 server.py &
+              SERVER_PID=$!
+              
+              # Wait for server to start
+              sleep 3
+              
+              # Test server accessibility
+              echo "Testing server accessibility..."
+              if curl -s http://localhost:8080/rss.xml > /dev/null; then
+                echo "Mock feed server is accessible!"
+              else
+                echo "ERROR: Could not access mock feed server"
+                exit 1
+              fi
+              
+              # Check that the RSS monitor pod is running
+              echo "Checking RSS monitor status..."
+              if kubectl get pod -n {{ .Release.Namespace }} -l app.kubernetes.io/name={{ .Release.Name }}-rss-monitor -o jsonpath="{.items[0].status.phase}" | grep -q "Running"; then
+                echo "RSS monitor pod is running"
+              else
+                echo "ERROR: RSS monitor pod is not running"
+                exit 1
+              fi
+              
+              # Add a new release to the feed
+              echo "Generating a new release..."
+              python3 new_release.py
+              
+              # Get the release info from the result file
+              NEW_VERSION=$(cat probe_result.json | jq -r '.version')
+              echo "Generated release version: $NEW_VERSION"
+              
+              # Wait for the monitor to process the new feed (max 2 minutes)
+              echo "Waiting for RSS monitor to process the new release..."
+              for i in $(seq 1 12); do
+                if kubectl logs -n {{ .Release.Namespace }} -l app.kubernetes.io/name={{ .Release.Name }}-rss-monitor --tail=50 | grep -q "Processing release.*$NEW_VERSION"; then
+                  echo "SUCCESS: RSS monitor detected the new release!"
+                  exit 0
+                fi
+                echo "Waiting... ($i/12)"
+                sleep 10
+              done
+              
+              # If we get here, the test failed
+              echo "ERROR: RSS monitor did not detect the new release within the timeout period"
+              echo "Latest logs from RSS monitor:"
+              kubectl logs -n {{ .Release.Namespace }} -l app.kubernetes.io/name={{ .Release.Name }}-rss-monitor --tail=20
+              exit 1
+            resources:
+              limits:
+                cpu: 200m
+                memory: 256Mi
+              requests:
+                cpu: 100m
+                memory: 128Mi
+          serviceAccountName: {{ .Release.Name }}-rss-monitor
+          restartPolicy: OnFailure
+          {{- with .Values.rssMonitor.livenessProbe.nodeSelector }}
+          nodeSelector:
+            {{- toYaml . | nindent 12 }}
+          {{- end }}
+{{- end }} 

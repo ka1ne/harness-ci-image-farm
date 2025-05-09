@@ -1,0 +1,69 @@
+template:
+  name: Harness CI Image Factory Trigger
+  identifier: harness_ci_image_factory_trigger
+  versionLabel: "1.0.0"
+  type: Trigger
+  projectIdentifier: ${PROJECT_ID}
+  orgIdentifier: ${ORG_ID}
+  tags:
+    role: harness-image-factory-trigger
+    scope: template
+  spec:
+    type: Scheduled
+    spec:
+      scheduleType: Cron # Alternatively, could be Interval
+      cronExpression: 0 */12 * * * # Run every 12 hours by default
+      timezone: UTC
+      # For Interval type, you'd use:
+      # intervalParameter:
+      #   intervalType: Hours
+      #   intervalValue: 12
+    pipelineIdentifier: <+input>.default("harness_ci_image_factory") # Reference to the pipeline template
+    inputYaml: |
+      pipeline:
+        identifier: <+trigger.pipelineIdentifier>
+        variables:
+          - name: source_registry
+            type: String
+            value: <+input>.default("docker.io/harness")
+          - name: target_registry
+            type: String
+            value: <+input>
+          - name: registry_connector_source
+            type: String
+            value: <+input>
+          - name: registry_connector_target
+            type: String
+            value: <+input>
+          - name: scan_images
+            type: String
+            value: <+input>.default("true")
+          - name: fail_on_severity
+            type: String
+            value: <+input>.default("CRITICAL")
+          - name: filter_prefix
+            type: String
+            value: <+input>.default("")
+          - name: harness_only
+            type: String
+            value: <+input>.default("true")
+          - name: max_concurrency
+            type: Number
+            value: <+input>.default(5)
+          - name: infrastructure_type
+            type: String
+            value: <+input>.default("K8")
+          - name: include_windows_rootless
+            type: String
+            value: <+input>.default("false")
+          - name: modify_default
+            type: String
+            value: <+input>.default("false")
+          - name: HARNESS_URL
+            type: String
+            value: <+input>.default("https://app.harness.io")
+          - name: HARNESS_API_KEY_SECRET
+            type: String
+            value: <+input>
+    inputSetRefs: 
+      - <+input> 

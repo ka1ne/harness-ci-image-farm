@@ -6,26 +6,22 @@ global:
   # Harness platform settings
   harness:
     platformUrl: "https://app.harness.io/gateway"
+    organizationId: "default"
+    projectId: "playground"
     # Secret values should be supplied in a separate secrets file
     # secrets section is intentionally empty in default values
     secrets: {}
   
-  # Organization and project settings
-  organization:
-    name: "CI Factory"
-    create: true
-  
-  project:
-    name: "Image Management"
-    create: true
-  
   # Registry settings for CI images
   containerRegistry:
     type: "docker" # Supported: docker, azure
+    name: "docker.io/myorganization"
+    connectorRef: "dockerhub"
   
   # Kubernetes connector
   kubernetes:
     namespace: "harness-delegate"
+    connectorRef: "kubernetes-delegate"
 
 # RSS Monitor settings
 rssMonitor:
@@ -46,19 +42,28 @@ rssMonitor:
   # Configuration settings
   config:
     # Check interval in minutes
-    checkInterval: 60
+    checkInterval: "15"
     # Debug mode
-    debug: false
+    debug: "true"
     # List of target images to monitor
-    targetImages:
-      - "harness/ci-addon"
-      - "harness/ci-lite-engine"
-      - "harness/drone-git"
+    targetImages: "harness/ci-manager,harness/ci-service,harness/drone-git,harness/drone-runner"
   
   # Service account settings
   serviceAccount:
     create: true
-    name: "harness-rss-monitor"
+    name: ""
+
+  # Test mode settings
+  testMode:
+    enabled: false # Set to true to run in self-test mode with mocked feed
+
+  # Liveness probe settings
+  livenessProbe:
+    enabled: true
+    schedule: "0 */6 * * *"  # Run every 6 hours
+    successfulJobsHistoryLimit: 3
+    failedJobsHistoryLimit: 5
+    nodeSelector: {}
 
 # Terraform settings (for provisioning Harness resources)
 terraform:
@@ -98,4 +103,5 @@ triggers:
   
   # Enable RSS webhook trigger
   rssWebhook:
-    enabled: true 
+    enabled: true
+

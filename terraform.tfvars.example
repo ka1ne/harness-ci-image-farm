@@ -1,9 +1,45 @@
 # Terraform Variables Example File
 # Copy this to terraform.tfvars and fill in your actual values
 
-# Required Harness Credentials
-platform_api_key = "pat.YOUR_HARNESS_API_KEY_HERE.xxxxxxxxx"
-harness_account_id = "YOUR_HARNESS_ACCOUNT_ID_HERE"
+# Harness Platform Connection
+harness_platform_url = "https://app.harness.io/gateway" # Optional: Defaults to Harness SaaS URL
+
+# Required Harness Credentials 
+harness_platform_account = "YOUR_HARNESS_ACCOUNT_ID" # Required: Your Harness account ID
+harness_platform_key = "YOUR_HARNESS_API_KEY" # Required: Your Harness API key
+harness_api_key_secret = "harness.apikey" # Required: Name of the secret in Harness that stores the API key
+
+# Organization Settings
+organization_name = "CI Image Factory" # Required: Name of the Harness organization
+create_organization = true # Optional: Whether to create the organization if it doesn't exist (default: true)
+
+# Project Settings
+project_name = "CI Image Management" # Required: Name of the Harness project
+create_project = true # Optional: Whether to create the project if it doesn't exist (default: true)
+
+# Container Registry Settings
+container_registry = "docker.io/yourusername" # Required: Container registry address (e.g., docker.io/org, myacr.azurecr.io)
+container_registry_type = "docker" # Required: Registry type - either "docker", "azure", "ecr", or "gcp"
+container_registry_connector_ref = "dockerhub" # Required: Name of your Harness connector for the registry
+
+# Kubernetes Settings
+kubernetes_connector_ref = "k8s-delegate" # Required: Name of your Harness Kubernetes connector
+kubernetes_namespace = "harness-delegate-ng" # Required: Kubernetes namespace for CI operations
+
+# CI Pipeline Settings
+max_build_concurrency = 5 # Optional: Maximum number of simultaneous builds (default: 5)
+enable_schedule = true # Optional: Enable scheduled pipeline runs (default: true)
+schedule = "0 2 * * *" # Optional: Cron schedule for pipeline runs (default: daily at 2 AM)
+modify_default_image_config = true # Optional: Update Harness default images (default: true)
+
+# CI Image Settings
+ci_addon_image_tag = "latest" # Optional: Version tag for the CI addon image
+ci_lite_engine_tag = "latest" # Optional: Version tag for the CI lite engine image
+
+# Git Template Settings (Optional)
+use_git_templates = false # Optional: Use Git-based templates instead of inline templates
+git_connector_ref = "harness_templates_repo" # Optional: Git connector reference for templates
+git_repo_name = "harness-templates" # Optional: Git repository name for templates
 
 # Organization and Project IDs (optional, uncomment if needed)
 # harness_org_id     = "YOUR_HARNESS_ORG_ID_HERE"
