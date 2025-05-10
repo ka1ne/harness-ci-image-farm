@@ -1,16 +1,24 @@
-source:
-  type: Scheduled
-  spec:
-    type: Cron
+trigger:
+  name: Retrieve and Build Images
+  identifier: retrieve_and_build_images
+  enabled: true
+  description: "Scheduled trigger to retrieve and build CI images"
+  projectIdentifier: ${PROJECT_IDENTIFIER}
+  orgIdentifier: ${ORG_IDENTIFIER}
+  pipelineIdentifier: harness_ci_image_factory
+  source:
+    type: Scheduled
     spec:
-      expression: ${SCHEDULE}
-inputYaml: |
-  pipeline:
-    identifier: harness_ci_image_factory
-    variables:
-      - name: registry
-        type: String
-        value: ${REGISTRY_NAME}
-      - name: is_retry
-        type: String
-        value: "false"
+      type: Cron
+      spec:
+        expression: ${SCHEDULE}
+  inputYaml: |
+    pipeline:
+      identifier: harness_ci_image_factory
+      variables:
+        - name: registry
+          type: String
+          value: ${REGISTRY_NAME}
+        - name: is_retry
+          type: String
+          value: "false"
