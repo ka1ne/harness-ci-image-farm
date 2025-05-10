@@ -103,4 +103,4 @@ variable "modify_default_image_config" {
   type        = bool
   description = "[Optional] Update the Harness Platform to use the newly pushed images as the default versions when running CI pipelines. (requires modification of the harnessImages docker connector)"
   default     = true
-} 
+}
