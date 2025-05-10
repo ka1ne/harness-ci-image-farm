@@ -104,33 +104,3 @@ variable "modify_default_image_config" {
   description = "[Optional] Update the Harness Platform to use the newly pushed images as the default versions when running CI pipelines. (requires modification of the harnessImages docker connector)"
   default     = true
 }
-
-variable "ci_addon_image_tag" {
-  type        = string
-  description = "[Optional] The tag to use for the CI addon image (harness/ci-addon)"
-  default     = "latest"
-}
-
-variable "ci_lite_engine_tag" {
-  type        = string
-  description = "[Optional] The tag to use for the CI lite engine image (harness/ci-lite-engine)"
-  default     = "latest"
-}
-
-variable "use_git_templates" {
-  type        = bool
-  description = "[Optional] Use Git-based templates instead of inline templates. Requires a Git connector."
-  default     = false
-}
-
-variable "git_connector_ref" {
-  type        = string
-  description = "[Optional] Git connector reference for Git-based templates. Required if use_git_templates is true."
-  default     = ""
-}
-
-variable "git_repo_name" {
-  type        = string
-  description = "[Optional] Git repository name for Git-based templates. Required if use_git_templates is true."
-  default     = ""
-} 

@@ -1,63 +1,41 @@
-# Terraform Variables Example File
-# Copy this to terraform.tfvars and fill in your actual values
+# [Optional] Enter the Harness Platform URL.  Defaults to Harness SaaS URL
+harness_platform_url = "https://app.harness.io/gateway"
 
-# Harness Platform Connection
-harness_platform_url = "https://app.harness.io/gateway" # Optional: Defaults to Harness SaaS URL
+# [Required] Enter the Harness secret that holds an API key for your account
+harness_api_key_secret = # Required
 
-# Required Harness Credentials 
-harness_platform_account = "YOUR_HARNESS_ACCOUNT_ID" # Required: Your Harness account ID
-harness_platform_key = "YOUR_HARNESS_API_KEY" # Required: Your Harness API key
-harness_api_key_secret = "harness.apikey" # Required: Name of the secret in Harness that stores the API key
+# [Required] Provide an organization name.  Must be two or more characters
+organization_name = # Required
 
-# Organization Settings
-organization_name = "CI Image Factory" # Required: Name of the Harness organization
-create_organization = true # Optional: Whether to create the organization if it doesn't exist (default: true)
+# [Optional] Should this execution create a new Organization
+create_organization = false
 
-# Project Settings
-project_name = "CI Image Management" # Required: Name of the Harness project
-create_project = true # Optional: Whether to create the project if it doesn't exist (default: true)
+# [Required] Provide an project name.  Must be two or more characters
+project_name = # Required
 
-# Container Registry Settings
-container_registry = "docker.io/yourusername" # Required: Container registry address (e.g., docker.io/org, myacr.azurecr.io)
-container_registry_type = "docker" # Required: Registry type - either "docker", "azure", "ecr", or "gcp"
-container_registry_connector_ref = "dockerhub" # Required: Name of your Harness connector for the registry
+# [Optional] Should this execution create a new Project
+create_project = false
 
-# Kubernetes Settings
-kubernetes_connector_ref = "k8s-delegate" # Required: Name of your Harness Kubernetes connector
-kubernetes_namespace = "harness-delegate-ng" # Required: Kubernetes namespace for CI operations
+# [Required] Container Registry to which the image will be saved and stored
+container_registry = # Required
 
-# CI Pipeline Settings
-max_build_concurrency = 5 # Optional: Maximum number of simultaneous builds (default: 5)
-enable_schedule = true # Optional: Enable scheduled pipeline runs (default: true)
-schedule = "0 2 * * *" # Optional: Cron schedule for pipeline runs (default: daily at 2 AM)
-modify_default_image_config = true # Optional: Update Harness default images (default: true)
+# [Required] Type of Container Registry to which images will be pushed. Supported Values - azure or docker
+container_registry_type = # Required
 
-# CI Image Settings
-ci_addon_image_tag = "latest" # Optional: Version tag for the CI addon image
-ci_lite_engine_tag = "latest" # Optional: Version tag for the CI lite engine image
+# [Required] Container Registry Connector Reference
+container_registry_connector_ref = # Required
 
-# Git Template Settings (Optional)
-use_git_templates = false # Optional: Use Git-based templates instead of inline templates
-git_connector_ref = "harness_templates_repo" # Optional: Git connector reference for templates
-git_repo_name = "harness-templates" # Optional: Git repository name for templates
+# [Required] Kubernetes Connector Reference
+kubernetes_connector_ref = # Required
 
-# Organization and Project IDs (optional, uncomment if needed)
-# harness_org_id     = "YOUR_HARNESS_ORG_ID_HERE"
-# harness_project_id = "YOUR_HARNESS_PROJECT_ID_HERE"
+# [Required] Kubernetes Namespace within Cluster in which the CI process will build
+kubernetes_namespace = # Required
 
-# Additional configuration (uncomment and set as needed)
-# harness_platform_url = "https://app.harness.io/gateway"
-# harness_api_key_secret = "harness.apikey"
-# organization_name = "CI Image Factory"
-# create_organization = true
-# project_name = "CI Image Management"
-# create_project = true
-# container_registry = "docker.io/your-organization"
-# container_registry_type = "docker"
-# container_registry_connector_ref = "your-registry-connector"
-# kubernetes_connector_ref = "your-k8s-connector"
-# kubernetes_namespace = "harness-delegate"
-# max_build_concurrency = 5
-# enable_schedule = true
-# schedule = "0 2 * * *"
-# modify_default_image_config = true 
+# [Optional] Maximum number of simultaneous builds to perform
+max_build_concurrency = 5
+
+# [Optional] Should we enable the execution of this pipeline to run on a schedule?
+enable_schedule = false
+
+# [Optional] Cron Format schedule for when and how frequently to schedule this pipeline
+schedule = "0 2 * * *"
