@@ -32,7 +32,7 @@ kubernetes_connector_ref = # Required
 kubernetes_namespace = # Required
 
 # [Optional] Maximum number of simultaneous builds to perform
-max_build_concurrency = 5
+max_build_concurrency = 2
 
 # [Optional] Should we enable the execution of this pipeline to run on a schedule?
 enable_schedule = false

@@ -10,7 +10,7 @@ spec:
             identifier: gather_current_custom_images
             type: Http
             spec:
-              url: ${HARNESS_URL}/ci/execution-config/get-customer-config?accountIdentifier=<+account.identifier>&infra=k8&overridesOnly=true
+              url: ${HARNESS_URL}/ci/execution-config/get-customer-config?accountIdentifier=<+account.identifier>&infra=K8&overridesOnly=true
               method: GET
               assertion: <+httpResponseCode> == 200
               headers:
@@ -26,7 +26,7 @@ spec:
             identifier: download_harness_image_list
             type: Http
             spec:
-              url: ${HARNESS_URL}/ci/execution-config/get-default-config?accountIdentifier=<+account.identifier>&infra=k8
+              url: ${HARNESS_URL}/ci/execution-config/get-default-config?accountIdentifier=<+account.identifier>&infra=K8
               method: GET
               assertion: <+httpResponseCode> == 200
               headers:

@@ -20,7 +20,7 @@ module "harness-ci-factory" {
   container_registry_connector_ref = "account.registry_example_com"
   kubernetes_connector_ref         = "account.example_cluster"
   kubernetes_namespace             = "harnesscifactory"
-  max_build_concurrency            = 5
+  max_build_concurrency            = 2
   enable_schedule                  = false
   schedule                         = "0 2 * * *"
 }

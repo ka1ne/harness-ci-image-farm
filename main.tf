@@ -22,7 +22,7 @@ module "gather-harness-ci-images-template" {
   name             = "Gather Harness CI Images"
   organization_id  = module.organization.details.id
   project_id       = module.project.details.id
-  template_version = "v1.0.1"
+  template_version = "v1.1.2"
   type             = "Stage"
   yaml_data = templatefile(
     "${path.module}/templates/templates/gather-harness-ci-image-list.yaml",
@@ -44,7 +44,7 @@ module "build-push-template" {
   name             = "Build and Push Harness CI Standard Images"
   organization_id  = module.organization.details.id
   project_id       = module.project.details.id
-  template_version = "v1.0.1"
+  template_version = "v1.1.2"
   type             = "Stage"
   yaml_data = templatefile(
     "${path.module}/templates/templates/${lookup(local.build_push_target, var.container_registry_type, "MISSING-REGISTRY-TEMPLATE")}",

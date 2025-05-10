@@ -41,7 +41,7 @@ stages:
                 name: Update Custom Configuration of Images
                 identifier: Update_Custom_Configuration_of_Images
                 spec:
-                  url: ${HARNESS_URL}/ci/execution-config/update-config?accountIdentifier=<+account.identifier>&infra=k8
+                  url: ${HARNESS_URL}/ci/execution-config/update-config?accountIdentifier=<+account.identifier>&infra=K8
                   method: POST
                   assertion: <+httpResponseCode> == 200
                   headers:
